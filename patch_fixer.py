@@ -2,8 +2,6 @@
 import sys
 import re
 
-import numpy as np
-
 HUNK_HEADER = re.compile(r'^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@')
 
 def normalize_line(line):
@@ -30,7 +28,7 @@ def find_hunk_start(context_lines, original_lines):
     if not ctx:
         return 0  # fallback to start if no context
     for i in range(len(original_lines) - len(ctx) + 1):
-        #if original_lines[i:i+len(ctx)] == ctx:
+        # this part will fail if the diff is malformed beyond hunk header
         equal_lines = [original_lines[i+j].strip() == ctx[j].strip() for j in range(len(ctx))]
         if all(equal_lines):
             return i
