@@ -19,7 +19,6 @@ def normalize_line(line):
 
 def find_hunk_start(context_lines, original_lines):
     """Search original_lines for context_lines and return start line index (0-based)."""
-    print("-------------------find_hunk_start() called-------------------")
     ctx = []
     for line in context_lines:
         if line.startswith(" "):
@@ -29,15 +28,12 @@ def find_hunk_start(context_lines, original_lines):
         elif line.isspace() or line == "":
             ctx.append(line)
     if not ctx:
-        print("-------------------------CONTEXT EMPTY-------------------")
         return 0  # fallback to start if no context
-    print("".join(ctx))
     for i in range(len(original_lines) - len(ctx) + 1):
         #if original_lines[i:i+len(ctx)] == ctx:
         equal_lines = [original_lines[i+j].strip() == ctx[j].strip() for j in range(len(ctx))]
         if all(equal_lines):
             return i
-    print("----------------------CONTEXT ABOVE NOT FOUND--------------------")
     return 0
 
 def fix_patch_with_original(patch_lines, original_lines):
@@ -60,9 +56,6 @@ def fix_patch_with_original(patch_lines, original_lines):
         if not body:
             i += 1
             continue
-
-        #print("heeeeeeeeeeeeeeeeeeeeeeeeeeeeeeere's the BODYYYYYYYYYYYYYYYYYYYYYY")
-        #print("".join(body))
 
         # compute starting line in original file
         old_start = find_hunk_start(body, original_lines) + 1
