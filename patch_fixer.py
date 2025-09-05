@@ -37,6 +37,7 @@ def find_hunk_start(context_lines, original_lines):
 def fix_patch_with_original(patch_lines, original_lines):
     fixed_lines = []
     i = 0
+    offset = 0  # running tally of how perturbed the new line numbers are
 
     while i < len(patch_lines):
         line = patch_lines[i]
@@ -59,7 +60,8 @@ def fix_patch_with_original(patch_lines, original_lines):
         old_start = find_hunk_start(body, original_lines) + 1
         old_count = sum(1 for l in body if l.startswith((' ', '-')))
         new_count = sum(1 for l in body if l.startswith((' ', '+')))
-        new_start = old_start  # default, could be adjusted if necessary
+        offset += (new_count - old_count)
+        new_start = old_start + offset
 
         # write corrected header
         fixed_header = f"@@ -{old_start},{old_count} +{new_start},{new_count} @@\n"
