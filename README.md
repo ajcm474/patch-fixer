@@ -26,4 +26,4 @@ Every effort is made to make sure the line *counts* are still accurate, but you'
 
 ## License
 
-This is free and open source software, released under the GNU General Public License v3.0. See `LICENSE` for details.
+This is free and open source software, released under the Apache 2.0 License. See `LICENSE` for details.
