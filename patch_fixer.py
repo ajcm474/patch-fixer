@@ -7,8 +7,9 @@ from pathlib import Path
 path_regex = r'(?:/[A-Za-z0-9_.-]+)*'
 regexes = {
     "DIFF_LINE": re.compile(rf'diff --git (a{path_regex}+) (b{path_regex}+)'),
+    "MODE_LINE": re.compile(rf'(new|deleted) file mode [0-7]{6}'),
     "INDEX_LINE": re.compile(r'index [0-9a-f]{7}\.\.[0-9a-f]{7} [0-7]{6}'),
-    "BINARY_LINE": re.compile(rf'Binary files (a{path_regex}+) and (b{path_regex}+) differ'),
+    "BINARY_LINE": re.compile(rf'Binary files (a{path_regex}+|/dev/null) and (b{path_regex}+|/dev/null) differ'),
     "FILE_HEADER_START": re.compile(rf'--- (a{path_regex}+|/dev/null)'),
     "FILE_HEADER_END": re.compile(rf'\+\+\+ (b{path_regex}+|/dev/null)'),
     "HUNK_HEADER": re.compile(r'^@@ -(\d+),(\d+) \+(\d+),(\d+) @@')
@@ -86,6 +87,8 @@ def fix_patch(patch_lines, original):
     offset = 0      # running tally of how perturbed the new line numbers are
     last_hunk = 0   # start of last hunk (fixed lineno in changed file)
     last_diff = 0   # start of last diff (lineno in patch file itself)
+    last_mode = 0   # most recent "new file mode" or "deleted file mode" line
+    last_index = 0  # most recent "index <hex>..<hex> <file_permissions>" line
     file_start_header = False
     file_end_header = False
 
@@ -100,12 +103,19 @@ def fix_patch(patch_lines, original):
                 last_diff = i
                 file_start_header = False
                 file_end_header = False
+            case "MODE_LINE":
+                last_mode = i
+                if last_diff != i - 1:
+                    raise NotImplementedError("Missing diff line not yet supported")
+                fixed_lines.append(line)
             case "INDEX_LINE":
-                # TODO: handle missing index line
+                last_index = i
                 fixed_lines.append(line)
             case "BINARY_LINE":
                 raise NotImplementedError("Binary files not supported yet")
             case "FILE_HEADER_START":
+                if last_index != i - 1:
+                    raise NotImplementedError("Missing index line not yet supported")
                 file_end_header = False
                 if current_file and not dir_mode:
                     raise ValueError("Diff references multiple files but only one provided.")
@@ -113,6 +123,8 @@ def fix_patch(patch_lines, original):
                 offset = 0
                 last_hunk = 0
                 if current_file == "/dev/null":
+                    if last_diff > last_mode:
+                        raise NotImplementedError("Missing mode line not yet supported")
                     fixed_lines.append(line)
                     file_start_header = True
                     continue
@@ -129,6 +141,8 @@ def fix_patch(patch_lines, original):
                 dest_file = match_groups[0]
                 if not file_start_header:
                     if dest_file == "/dev/null":
+                        if last_diff > last_mode:
+                            raise NotImplementedError("Missing mode line not yet supported")
                         a = reconstruct_file_header(patch_lines[last_diff], "FILE_HEADER_START")
                         fixed_lines.append(a)
                     else:
