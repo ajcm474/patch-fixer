@@ -7,12 +7,15 @@ from pathlib import Path
 path_regex = r'(?:/[A-Za-z0-9_.-]+)*'
 regexes = {
     "DIFF_LINE": re.compile(rf'diff --git (a{path_regex}+) (b{path_regex}+)'),
-    "MODE_LINE": re.compile(rf'(new|deleted) file mode [0-7]{6}'),
-    "INDEX_LINE": re.compile(r'index [0-9a-f]{7}\.\.[0-9a-f]{7} [0-7]{6}'),
+    "MODE_LINE": re.compile(r'(new|deleted) file mode [0-7]{6}'),
+    "INDEX_LINE": re.compile(r'index [0-9a-f]{7}\.\.[0-9a-f]{7} [0-7]{6}|similarity index ([0-9]+)%'),
     "BINARY_LINE": re.compile(rf'Binary files (a{path_regex}+|/dev/null) and (b{path_regex}+|/dev/null) differ'),
+    "RENAME_FROM": re.compile(rf'rename from ({path_regex})'),
+    "RENAME_TO": re.compile(rf'rename to ({path_regex})'),
     "FILE_HEADER_START": re.compile(rf'--- (a{path_regex}+|/dev/null)'),
     "FILE_HEADER_END": re.compile(rf'\+\+\+ (b{path_regex}+|/dev/null)'),
-    "HUNK_HEADER": re.compile(r'^@@ -(\d+),(\d+) \+(\d+),(\d+) @@')
+    "HUNK_HEADER": re.compile(r'^@@ -(\d+),(\d+) \+(\d+),(\d+) @@'),
+    "END_LINE": re.compile(r'\\ No newline at end of file')
 }
 
 def normalize_line(line):
@@ -37,7 +40,7 @@ def find_hunk_start(context_lines, original_lines):
         elif line.isspace() or line == "":
             ctx.append(line)
     if not ctx:
-        return 0  # fallback to start if no context
+        raise ValueError("Cannot search for empty hunk.")
     for i in range(len(original_lines) - len(ctx) + 1):
         # this part will fail if the diff is malformed beyond hunk header
         equal_lines = [original_lines[i+j].strip() == ctx[j].strip() for j in range(len(ctx))]
@@ -91,6 +94,8 @@ def fix_patch(patch_lines, original):
     last_index = 0  # most recent "index <hex>..<hex> <file_permissions>" line
     file_start_header = False
     file_end_header = False
+    look_for_rename = False
+    similarity_index = None
 
     for i, line in enumerate(patch_lines):
         match_groups, line_type = match_line(line)
@@ -110,10 +115,48 @@ def fix_patch(patch_lines, original):
                 fixed_lines.append(line)
             case "INDEX_LINE":
                 last_index = i
+                similarity_index = match_groups[0]
+                if similarity_index:
+                    look_for_rename = True
                 fixed_lines.append(line)
             case "BINARY_LINE":
                 raise NotImplementedError("Binary files not supported yet")
+            case "RENAME_FROM":
+                if not look_for_rename:
+                    pass    # TODO: handle missing index line
+                if last_index != i - 1:
+                    raise NotImplementedError("Missing index line not yet supported")
+                look_for_rename = False
+                current_file = match_groups[0]
+                offset = 0
+                last_hunk = 0
+                if not os.path.exists(current_file):
+                    if similarity_index == 100:
+                        fixed_lines.append(line)
+                        look_for_rename = True
+                        continue
+                    raise NotImplementedError("Parsing files that were both renamed and modified is not yet supported.")
+                if dir_mode or Path(current_file) == Path(original):
+                    with open(current_file, encoding='utf-8') as f:
+                        original_lines = [l.rstrip('\n') for l in f.readlines()]
+                    fixed_lines.append(line)
+                    # TODO: analogous boolean to `file_start_header`?
+                else:
+                    raise FileNotFoundError(f"Filename {current_file} in `rename from` header does not match command line argument {original}")
+            case "RENAME_TO":
+                if last_index != i - 2:     # TODO: make this check more robust
+                    raise NotImplementedError("Missing `rename from` header not yet supported.")
+                if look_for_rename:
+                    # the old file doesn't exist, so we need to read this one
+                    current_file = match_groups[0]
+                    with open(current_file, encoding='utf-8') as f:
+                        original_lines = [l.rstrip('\n') for l in f.readlines()]
+                    fixed_lines.append(line)
+                    look_for_rename = False
+                pass
             case "FILE_HEADER_START":
+                if look_for_rename:
+                    raise NotImplementedError("Replacing file header with rename not yet supported.")
                 if last_index != i - 1:
                     raise NotImplementedError("Missing index line not yet supported")
                 file_end_header = False
@@ -138,6 +181,8 @@ def fix_patch(patch_lines, original):
                 else:
                     raise FileNotFoundError(f"Filename {current_file} in header does not match command line argument {original}")
             case "FILE_HEADER_END":
+                if look_for_rename:
+                    raise NotImplementedError("Replacing file header with rename not yet supported.")
                 dest_file = match_groups[0]
                 if not file_start_header:
                     if dest_file == "/dev/null":
@@ -203,6 +248,9 @@ def fix_patch(patch_lines, original):
                 fixed_lines.append(fixed_header)
                 fixed_lines.extend(current_hunk)
                 current_hunk = []
+            case "END_LINE":
+                # TODO: add newline at end of file if user requests
+                fixed_lines.append(line)
             case _:
                 # TODO: fuzzy string matching
                 # this is a normal line, add to current hunk
