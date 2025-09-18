@@ -59,8 +59,8 @@ def match_line(line):
 
 def split_ab(match_groups):
     a, b = match_groups
-    a = a.replace("a/", "./")
-    b = b.replace("b/", "./")
+    a = f"./{a[2:]}"
+    b = f"./{b[2:]}"
     return a, b
 
 
@@ -80,9 +80,10 @@ def reconstruct_file_header(diff_line, header_type):
 
 def fix_patch(patch_lines, original):
     dir_mode = os.path.isdir(original)
+    original_path = Path(original).absolute()
 
     # make relative paths in the diff work
-    os.chdir(Path(original).parent)
+    os.chdir(original_path)
 
     fixed_lines = []
     current_hunk = []
@@ -128,28 +129,30 @@ def fix_patch(patch_lines, original):
                     raise NotImplementedError("Missing index line not yet supported")
                 look_for_rename = False
                 current_file = match_groups[0]
+                current_path = Path(current_file).absolute()
                 offset = 0
                 last_hunk = 0
-                if not os.path.exists(current_file):
+                if not Path.exists(current_path):
                     if similarity_index == 100:
                         fixed_lines.append(line)
                         look_for_rename = True
                         continue
                     raise NotImplementedError("Parsing files that were both renamed and modified is not yet supported.")
-                if dir_mode or Path(current_file) == Path(original):
-                    with open(current_file, encoding='utf-8') as f:
+                if dir_mode or current_path == original_path:
+                    with open(current_path, encoding='utf-8') as f:
                         original_lines = [l.rstrip('\n') for l in f.readlines()]
                     fixed_lines.append(line)
                     # TODO: analogous boolean to `file_start_header`?
                 else:
-                    raise FileNotFoundError(f"Filename {current_file} in `rename from` header does not match command line argument {original}")
+                    raise FileNotFoundError(f"Filename {current_file} in `rename from` header does not match argument {original}")
             case "RENAME_TO":
                 if last_index != i - 2:     # TODO: make this check more robust
                     raise NotImplementedError("Missing `rename from` header not yet supported.")
                 if look_for_rename:
                     # the old file doesn't exist, so we need to read this one
                     current_file = match_groups[0]
-                    with open(current_file, encoding='utf-8') as f:
+                    current_path = Path(current_file).absolute()
+                    with open(current_path, encoding='utf-8') as f:
                         original_lines = [l.rstrip('\n') for l in f.readlines()]
                     fixed_lines.append(line)
                     look_for_rename = False
@@ -171,7 +174,12 @@ def fix_patch(patch_lines, original):
                     fixed_lines.append(line)
                     file_start_header = True
                     continue
-                if not os.path.exists(current_file):
+                if current_file.startswith("a/"):
+                    current_file = current_file[2:]
+                else:
+                    line = line.replace(current_file, f"a/{current_file}")
+                current_path = Path(current_file).absolute()
+                if not current_path.exists():
                     raise FileNotFoundError(f"File header start points to non-existent file: {current_file}")
                 if dir_mode or Path(current_file) == Path(original):
                     with open(current_file, encoding='utf-8') as f:
@@ -179,11 +187,16 @@ def fix_patch(patch_lines, original):
                     fixed_lines.append(line)
                     file_start_header = True
                 else:
-                    raise FileNotFoundError(f"Filename {current_file} in header does not match command line argument {original}")
+                    raise FileNotFoundError(f"Filename {current_file} in header does not match argument {original}")
             case "FILE_HEADER_END":
                 if look_for_rename:
                     raise NotImplementedError("Replacing file header with rename not yet supported.")
                 dest_file = match_groups[0]
+                dest_path = Path(dest_file).absolute()
+                if dest_file.startswith("b/"):
+                    dest_file = dest_file[2:]
+                elif dest_file != "/dev/null":
+                    line = line.replace(dest_file, f"b/{dest_file}")
                 if not file_start_header:
                     if dest_file == "/dev/null":
                         if last_diff > last_mode:
@@ -192,23 +205,24 @@ def fix_patch(patch_lines, original):
                         fixed_lines.append(a)
                     else:
                         # reconstruct file start header based on end header
-                        a = dest_file.replace("b", "a")
+                        a = match_groups[0].replace("b", "a")
                         fixed_lines.append(f"--- {a}")
                     file_start_header = True
                 elif current_file == "/dev/null":
-                    current_file = dest_file
-                    if not os.path.exists(current_file):
-                        raise FileNotFoundError(f"File header end points to non-existent file: {current_file}")
-                    elif dest_file == "/dev/null":
+                    if dest_file == "/dev/null":
                         raise ValueError("File headers cannot both be /dev/null")
-                    if dir_mode or Path(current_file) == Path(original):
+                    elif not dest_path.exists():
+                        raise FileNotFoundError(f"File header end points to non-existent file: {dest_file}")
+                    current_file = dest_file
+                    current_path = Path(current_file).absolute()
+                    if dir_mode or current_path == original_path:
                         # TODO: in dir mode, verify that current file exists in original path
-                        with open(current_file, encoding='utf-8') as f:
+                        with open(current_path, encoding='utf-8') as f:
                             original_lines = [l.rstrip('\n') for l in f.readlines()]
                         fixed_lines.append(line)
                         file_end_header = True
                     else:
-                        raise FileNotFoundError(f"Filename {current_file} in header does not match command line argument {original}")
+                        raise FileNotFoundError(f"Filename {current_file} in header does not match argument {original}")
                 elif dest_file == "/dev/null":
                     raise NotImplementedError("File deletion not yet supported")
                 elif current_file != dest_file:

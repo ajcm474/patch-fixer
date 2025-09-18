@@ -1,6 +1,6 @@
 [project]
 name = "code-diff-fixer"
-version = "0.0.2"
+version = "0.0.3"
 description = "Fixes erroneous code diffs to the best of its ability."
 maintainers = [
     {name = "Alex Mueller", email="amueller474@gmail.com"},
