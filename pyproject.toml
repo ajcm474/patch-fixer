@@ -1,0 +1,33 @@
+[project]
+name = "code-diff-fixer"
+version = "0.0.1"
+description = "Fixes erroneous code diffs to the best of its ability."
+maintainers = [
+    {name = "Alex Mueller", email="amueller474@gmail.com"},
+]
+requires-python = ">=3.10"
+readme = "README.md"
+classifiers = [
+    'Development Status :: 3 - Alpha',
+    'Intended Audience :: Developers',
+    'Programming Language :: Python',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
+    'Programming Language :: Python :: 3 :: Only',
+    'Topic :: Software Development',
+]
+license = 'Apache 2.0'
+license-files = [
+    'LICENSE'
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "GitPython",
+    "requests"
+]
