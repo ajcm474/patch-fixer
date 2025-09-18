@@ -1,7 +1,7 @@
 [project]
-name = "code-diff-fixer"
-version = "0.0.3"
-description = "Fixes erroneous code diffs to the best of its ability."
+name = "patch-fixer"
+version = "0.1.0"
+description = "Fixes erroneous git apply patches to the best of its ability."
 maintainers = [
     {name = "Alex Mueller", email="amueller474@gmail.com"},
 ]
