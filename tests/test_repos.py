@@ -20,10 +20,11 @@ import sys
 import zipfile
 from pathlib import Path
 
-import git
 import requests
 from git import Repo
 import pytest
+
+from patch_fixer import fix_patch
 
 REPOS = {
     ("asottile", "astpretty"): ("5b68c7e", "5a8296f"),
@@ -35,32 +36,32 @@ REPOS = {
 
 CACHE_DIR = Path.home() / ".patch-testing"
 
+class DeletedBranchError(ValueError):
+    def __init__(self, commit_hash):
+        self.commit_hash = commit_hash
+        super().__init__()
 
-def verify_commit_exists(self, repo: Repo, commit_hash: str) -> None:
+
+def verify_commit_exists(repo: Repo, commit_hash: str) -> None:
     """Verify that a commit exists in the repository."""
     try:
         repo.commit(commit_hash)
-    except git.exc.BadName:
-        print(f"Commit {commit_hash} does not exist in {repo}.")
-        sys.exit(1)
-    except ValueError as e:
+    except ValueError:
         # Commit belongs to a deleted branch (let caller handle it)
-        raise e
-    except Exception as e:
-        print(f"❌ Error verifying commit {commit_hash}: {e}")
-        sys.exit(1)
+        raise DeletedBranchError(commit_hash)
 
 
-def download_commit_zip(self, commit_hash: str, dest_path: Path) -> None:
+def download_commit_zip(repo_url, commit_hash: str, dest_path: Path) -> None:
     """Download and extract the repo snapshot at a given commit via GitHub's zip URL."""
-    url = f"https://github.com/{self.repo_path}/archive/{commit_hash}.zip"
-    print(f"⬇️  Downloading snapshot from {url}")
+    url = f"{repo_url}/archive/{commit_hash}.zip"
+    print(f"Downloading snapshot from {url}")
 
     try:
         r = requests.get(url, stream=True)
         r.raise_for_status()
     except Exception as e:
-        print(f"❌ Failed to download commit snapshot: {e}")
+        # TODO: don't use bare except
+        print(f"Failed to download commit snapshot: {e}")
         sys.exit(1)
 
     # Extract the zip into dest_path
@@ -75,7 +76,52 @@ def download_commit_zip(self, commit_hash: str, dest_path: Path) -> None:
             shutil.rmtree(dest_path)
         extracted_path.rename(dest_path)
 
-    print(f"✅ Snapshot extracted to {dest_path}")
+    print(f"Snapshot extracted to {dest_path}")
+
+
+def clone_repos(repo_group, repo_name, old_commit, new_commit):
+    repo_new_path = CACHE_DIR / f"{repo_name}-{new_commit}"
+    repo_old_path = CACHE_DIR / f"{repo_name}-{old_commit}"
+
+    # if repo has been cached, use that
+    old_exists = Path.exists(repo_old_path)
+    new_exists = Path.exists(repo_new_path)
+    if old_exists or new_exists:
+        if not old_exists:
+            shutil.copytree(repo_new_path, repo_old_path)
+        if not new_exists:
+            shutil.copytree(repo_old_path, repo_new_path)
+
+        # TODO: handle deleted branches here too
+        repo_old = Repo(repo_old_path)
+        repo_new = Repo(repo_new_path)
+        repo_old.git.reset("--hard", old_commit)
+        repo_new.git.reset("--hard", new_commit)
+
+    # otherwise, clone it and make a copy for each commit
+    else:
+        repo_url = f"https://github.com/{repo_group}/{repo_name}.git"
+        repo_new = Repo.clone_from(repo_url, repo_new_path)
+
+        try:
+            verify_commit_exists(repo_new, new_commit)
+            repo_new.git.reset("--hard", new_commit)
+        except DeletedBranchError:
+            download_commit_zip(repo_url[:-4], new_commit, repo_new_path)
+            # no sense keeping around an object that points to HEAD
+            repo_new = Repo(repo_new_path)
+
+        # Prevent downloading the repo twice if we can help it
+        shutil.copytree(repo_new_path, repo_old_path)
+        repo_old = Repo(repo_old_path)
+        try:
+            verify_commit_exists(repo_old, old_commit)
+            repo_old.git.reset("--hard", old_commit)
+        except DeletedBranchError:
+            download_commit_zip(repo_url[:-4], old_commit, repo_old_path)
+
+    return repo_old, repo_old_path, repo_new, repo_new_path
+
 
 @pytest.mark.parametrize(
     "repo_group, repo_name, old_commit, new_commit",
@@ -83,11 +129,16 @@ def download_commit_zip(self, commit_hash: str, dest_path: Path) -> None:
 )
 def test_integration_equality(repo_group, repo_name, old_commit, new_commit):
     """ Make sure the patch fixer doesn't corrupt valid diffs. """
-    repo_head = CACHE_DIR / repo_name
-    if Path.exists(repo_head):
-        # if repo has been cached, use that
-        pass    # TODO
-    else:
-        repo_url = f"https://github.com/{repo_group}/{repo_name}.git"
-        repo = Repo.clone_from(repo_url, repo_head)
-        pass
+    (
+        repo_old,
+        repo_old_path,
+        repo_new,
+        repo_new_path
+    ) = clone_repos(repo_group, repo_name, old_commit, new_commit)
+
+    expected = repo_new.git.diff(old_commit, new_commit)
+    input_lines = expected.splitlines()
+    fixed_lines = fix_patch(input_lines, repo_old_path)
+    actual = "\n".join(fixed_lines)
+
+    assert actual == expected
