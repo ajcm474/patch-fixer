@@ -14,7 +14,7 @@ regexes = {
     "RENAME_TO": re.compile(rf'rename to ({path_regex})'),
     "FILE_HEADER_START": re.compile(rf'--- (a{path_regex}+|/dev/null)'),
     "FILE_HEADER_END": re.compile(rf'\+\+\+ (b{path_regex}+|/dev/null)'),
-    "HUNK_HEADER": re.compile(r'^@@ -(\d+),(\d+) \+(\d+),(\d+) @@'),
+    "HUNK_HEADER": re.compile(r'^@@ -(\d+),(\d+) \+(\d+),(\d+) @@(.*)$'),
     "END_LINE": re.compile(r'\\ No newline at end of file')
 }
 
@@ -24,15 +24,12 @@ class MissingHunkError(Exception):
 
 
 def normalize_line(line):
-    if line.startswith(('---', '+++', '@@')):
-        return line
     if line.startswith('+'):
         # safe to normalize new content
         return '+' + line[1:].rstrip() + "\n"
-    if line.startswith((' ', '-')):
+    else:
         # preserve exactly (only normalize line endings)
         return line.rstrip("\r\n") + "\n"
-    return line.rstrip("\r\n") + "\n"
 
 def find_hunk_start(context_lines, original_lines):
     """Search original_lines for context_lines and return start line index (0-based)."""
@@ -83,11 +80,10 @@ def reconstruct_file_header(diff_line, header_type):
             raise ValueError(f"Unsupported header type: {header_type}")
 
 
-def capture_hunk(current_hunk, original_lines, offset, last_hunk):
+def capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context):
     # compute line counts
     old_count = sum(1 for l in current_hunk if l.startswith((' ', '-')))
     new_count = sum(1 for l in current_hunk if l.startswith((' ', '+')))
-    offset += (new_count - old_count)
 
     # compute starting line in original file
     old_start = find_hunk_start(current_hunk, original_lines) + 1
@@ -98,10 +94,12 @@ def capture_hunk(current_hunk, original_lines, offset, last_hunk):
     else:
         new_start = old_start + offset
 
+    offset += (new_count - old_count)
+
     last_hunk = old_start
 
     # write corrected header
-    fixed_header = f"@@ -{old_start},{old_count} +{new_start},{new_count} @@\n"
+    fixed_header = f"@@ -{old_start},{old_count} +{new_start},{new_count} @@{hunk_context}\n"
 
     return fixed_header, offset, last_hunk
 
@@ -126,6 +124,7 @@ def fix_patch(patch_lines, original):
     file_end_header = False
     look_for_rename = False
     similarity_index = None
+    hunk_context = ""
 
     for i, line in enumerate(patch_lines):
         match_groups, line_type = match_line(line)
@@ -138,7 +137,7 @@ def fix_patch(patch_lines, original):
                             fixed_header,
                             offset,
                             last_hunk
-                        ) = capture_hunk(current_hunk, original_lines, offset, last_hunk)
+                        ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context)
                     except MissingHunkError:
                         raise NotImplementedError(f"Could not find hunk in {current_file}:"
                                                   f"\n\n{"\n".join(current_hunk)}")
@@ -148,7 +147,7 @@ def fix_patch(patch_lines, original):
                 a, b = split_ab(match_groups)
                 if a != b:
                     raise ValueError(f"Diff paths do not match: \n{a}\n{b}")
-                fixed_lines.append(line)
+                fixed_lines.append(normalize_line(line))
                 last_diff = i
                 file_start_header = False
                 file_end_header = False
@@ -157,13 +156,13 @@ def fix_patch(patch_lines, original):
                 if last_diff != i - 1:
                     raise NotImplementedError("Missing diff line not yet supported")
                 last_mode = i
-                fixed_lines.append(line)
+                fixed_lines.append(normalize_line(line))
             case "INDEX_LINE":
                 last_index = i
                 similarity_index = match_groups[0]
                 if similarity_index:
                     look_for_rename = True
-                fixed_lines.append(line)
+                fixed_lines.append(normalize_line(line))
             case "BINARY_LINE":
                 raise NotImplementedError("Binary files not supported yet")
             case "RENAME_FROM":
@@ -178,14 +177,14 @@ def fix_patch(patch_lines, original):
                 last_hunk = 0
                 if not Path.exists(current_path):
                     if similarity_index == 100:
-                        fixed_lines.append(line)
+                        fixed_lines.append(normalize_line(line))
                         look_for_rename = True
                         continue
                     raise NotImplementedError("Parsing files that were both renamed and modified is not yet supported.")
                 if dir_mode or current_path == original_path:
                     with open(current_path, encoding='utf-8') as f:
                         original_lines = [l.rstrip('\n') for l in f.readlines()]
-                    fixed_lines.append(line)
+                    fixed_lines.append(normalize_line(line))
                     # TODO: analogous boolean to `file_start_header`?
                 else:
                     raise FileNotFoundError(f"Filename {current_file} in `rename from` header does not match argument {original}")
@@ -198,7 +197,7 @@ def fix_patch(patch_lines, original):
                     current_path = Path(current_file).absolute()
                     with open(current_path, encoding='utf-8') as f:
                         original_lines = [l.rstrip('\n') for l in f.readlines()]
-                    fixed_lines.append(line)
+                    fixed_lines.append(normalize_line(line))
                     look_for_rename = False
                 pass
             case "FILE_HEADER_START":
@@ -215,7 +214,7 @@ def fix_patch(patch_lines, original):
                 if current_file == "/dev/null":
                     if last_diff > last_mode:
                         raise NotImplementedError("Missing mode line not yet supported")
-                    fixed_lines.append(line)
+                    fixed_lines.append(normalize_line(line))
                     file_start_header = True
                     continue
                 if current_file.startswith("a/"):
@@ -228,7 +227,7 @@ def fix_patch(patch_lines, original):
                 if dir_mode or Path(current_file) == Path(original):
                     with open(current_file, encoding='utf-8') as f:
                         original_lines = [l.rstrip('\n') for l in f.readlines()]
-                    fixed_lines.append(line)
+                    fixed_lines.append(normalize_line(line))
                     file_start_header = True
                 else:
                     raise FileNotFoundError(f"Filename {current_file} in header does not match argument {original}")
@@ -246,11 +245,11 @@ def fix_patch(patch_lines, original):
                         if last_diff > last_mode:
                             raise NotImplementedError("Missing mode line not yet supported")
                         a = reconstruct_file_header(patch_lines[last_diff], "FILE_HEADER_START")
-                        fixed_lines.append(a)
+                        fixed_lines.append(normalize_line(a))
                     else:
                         # reconstruct file start header based on end header
                         a = match_groups[0].replace("b", "a")
-                        fixed_lines.append(f"--- {a}")
+                        fixed_lines.append(normalize_line(f"--- {a}"))
                     file_start_header = True
                 elif current_file == "/dev/null":
                     if dest_file == "/dev/null":
@@ -263,7 +262,7 @@ def fix_patch(patch_lines, original):
                         # TODO: in dir mode, verify that current file exists in original path
                         with open(current_path, encoding='utf-8') as f:
                             original_lines = [l.rstrip('\n') for l in f.readlines()]
-                        fixed_lines.append(line)
+                        fixed_lines.append(normalize_line(line))
                         file_end_header = True
                     else:
                         raise FileNotFoundError(f"Filename {current_file} in header does not match argument {original}")
@@ -278,16 +277,17 @@ def fix_patch(patch_lines, original):
                     diff_line = patch_lines[last_diff]
                     if not file_start_header:
                         a = reconstruct_file_header(diff_line, "FILE_HEADER_START")
-                        fixed_lines.append(a)
+                        fixed_lines.append(normalize_line(a))
                         file_start_header = True
                         current_file = split_ab(match_line(diff_line))[0]
                     b = reconstruct_file_header(diff_line, "FILE_HEADER_END")
-                    fixed_lines.append(b)
+                    fixed_lines.append(normalize_line(b))
                     file_end_header = True
 
                 # we can't fix the hunk header before we've captured a hunk
                 if first_hunk:
                     first_hunk = False
+                    hunk_context = match_groups[4]
                     continue
 
                 try:
@@ -295,20 +295,38 @@ def fix_patch(patch_lines, original):
                         fixed_header,
                         offset,
                         last_hunk
-                    ) = capture_hunk(current_hunk, original_lines, offset, last_hunk)
+                    ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context)
                 except MissingHunkError:
                     raise NotImplementedError(f"Could not find hunk in {current_file}:"
                                               f"\n\n{"\n".join(current_hunk)}")
                 fixed_lines.append(fixed_header)
                 fixed_lines.extend(current_hunk)
                 current_hunk = []
+                hunk_context = match_groups[4]
             case "END_LINE":
                 # TODO: add newline at end of file if user requests
-                fixed_lines.append(line)
+                fixed_lines.append(normalize_line(line))
             case _:
                 # TODO: fuzzy string matching
                 # this is a normal line, add to current hunk
                 current_hunk.append(normalize_line(line))
+
+    # we need to process the last hunk since there's no new header to catch it
+    try:
+        (
+            fixed_header,
+            offset,
+            last_hunk
+        ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context)
+    except MissingHunkError:
+        raise NotImplementedError(f"Could not find hunk in {current_file}:"
+                                  f"\n\n{"\n".join(current_hunk)}")
+    fixed_lines.append(fixed_header)
+    fixed_lines.extend(current_hunk)
+
+    # if original file didn't end with a newline, strip out the newline here
+    if not original_lines[-1].endswith("\n"):
+        fixed_lines[-1] = fixed_lines[-1].rstrip("\n")
 
     return fixed_lines
 
