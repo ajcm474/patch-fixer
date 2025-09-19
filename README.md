@@ -22,7 +22,7 @@ Assuming you've already cloned the repo:
 pip install -e .[test]
 pytest
 ```
-Note that all tests currently fail as this project is in the early alpha stage.
+Note that most tests currently fail as this project is in the early alpha stage.
 
 ## License
 
