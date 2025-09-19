@@ -18,6 +18,11 @@ regexes = {
     "END_LINE": re.compile(r'\\ No newline at end of file')
 }
 
+
+class MissingHunkError(Exception):
+    pass
+
+
 def normalize_line(line):
     if line.startswith(('---', '+++', '@@')):
         return line
@@ -78,6 +83,29 @@ def reconstruct_file_header(diff_line, header_type):
             raise ValueError(f"Unsupported header type: {header_type}")
 
 
+def capture_hunk(current_hunk, original_lines, offset, last_hunk):
+    # compute line counts
+    old_count = sum(1 for l in current_hunk if l.startswith((' ', '-')))
+    new_count = sum(1 for l in current_hunk if l.startswith((' ', '+')))
+    offset += (new_count - old_count)
+
+    # compute starting line in original file
+    old_start = find_hunk_start(current_hunk, original_lines) + 1
+
+    # if the line number descends, we either have a bad match or a new file
+    if old_start < last_hunk:
+        raise MissingHunkError
+    else:
+        new_start = old_start + offset
+
+    last_hunk = old_start
+
+    # write corrected header
+    fixed_header = f"@@ -{old_start},{old_count} +{new_start},{new_count} @@\n"
+
+    return fixed_header, offset, last_hunk
+
+
 def fix_patch(patch_lines, original):
     dir_mode = os.path.isdir(original)
     original_path = Path(original).absolute()
@@ -88,6 +116,7 @@ def fix_patch(patch_lines, original):
     fixed_lines = []
     current_hunk = []
     current_file = None
+    first_hunk = True
     offset = 0      # running tally of how perturbed the new line numbers are
     last_hunk = 0   # start of last hunk (fixed lineno in changed file)
     last_diff = 0   # start of last diff (lineno in patch file itself)
@@ -102,6 +131,20 @@ def fix_patch(patch_lines, original):
         match_groups, line_type = match_line(line)
         match line_type:
             case "DIFF_LINE":
+                if not first_hunk:
+                    # process last hunk with header in previous file
+                    try:
+                        (
+                            fixed_header,
+                            offset,
+                            last_hunk
+                        ) = capture_hunk(current_hunk, original_lines, offset, last_hunk)
+                    except MissingHunkError:
+                        raise NotImplementedError(f"Could not find hunk in {current_file}:"
+                                                  f"\n\n{"\n".join(current_hunk)}")
+                    fixed_lines.append(fixed_header)
+                    fixed_lines.extend(current_hunk)
+                    current_hunk = []
                 a, b = split_ab(match_groups)
                 if a != b:
                     raise ValueError(f"Diff paths do not match: \n{a}\n{b}")
@@ -109,10 +152,11 @@ def fix_patch(patch_lines, original):
                 last_diff = i
                 file_start_header = False
                 file_end_header = False
+                first_hunk = True
             case "MODE_LINE":
-                last_mode = i
                 if last_diff != i - 1:
                     raise NotImplementedError("Missing diff line not yet supported")
+                last_mode = i
                 fixed_lines.append(line)
             case "INDEX_LINE":
                 last_index = i
@@ -241,24 +285,20 @@ def fix_patch(patch_lines, original):
                     fixed_lines.append(b)
                     file_end_header = True
 
-                # compute line counts
-                old_count = sum(1 for l in current_hunk if l.startswith((' ', '-')))
-                new_count = sum(1 for l in current_hunk if l.startswith((' ', '+')))
-                offset += (new_count - old_count)
+                # we can't fix the hunk header before we've captured a hunk
+                if first_hunk:
+                    first_hunk = False
+                    continue
 
-                # compute starting line in original file
-                old_start = find_hunk_start(current_hunk, original_lines) + 1
-
-                # if the line number descends, we either have a bad match or a new file
-                if old_start < last_hunk:
-                    raise NotImplementedError(f"Giving up; hunk not found in {current_file}: \n\n{current_hunk}")
-                else:
-                    new_start = old_start + offset
-
-                last_hunk = old_start
-
-                # write corrected header
-                fixed_header = f"@@ -{old_start},{old_count} +{new_start},{new_count} @@\n"
+                try:
+                    (
+                        fixed_header,
+                        offset,
+                        last_hunk
+                    ) = capture_hunk(current_hunk, original_lines, offset, last_hunk)
+                except MissingHunkError:
+                    raise NotImplementedError(f"Could not find hunk in {current_file}:"
+                                              f"\n\n{"\n".join(current_hunk)}")
                 fixed_lines.append(fixed_header)
                 fixed_lines.extend(current_hunk)
                 current_hunk = []

@@ -139,6 +139,6 @@ def test_integration_equality(repo_group, repo_name, old_commit, new_commit):
     expected = repo_new.git.diff(old_commit, new_commit)
     input_lines = expected.splitlines()
     fixed_lines = fix_patch(input_lines, repo_old_path)
-    actual = "\n".join(fixed_lines)
+    actual = "".join(fixed_lines)
 
     assert actual == expected
