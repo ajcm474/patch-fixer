@@ -8,7 +8,7 @@ path_regex = r'(?:/[A-Za-z0-9_.-]+)*'
 regexes = {
     "DIFF_LINE": re.compile(rf'diff --git (a{path_regex}+) (b{path_regex}+)'),
     "MODE_LINE": re.compile(r'(new|deleted) file mode [0-7]{6}'),
-    "INDEX_LINE": re.compile(r'index [0-9a-f]{7}\.\.[0-9a-f]{7} [0-7]{6}|similarity index ([0-9]+)%'),
+    "INDEX_LINE": re.compile(r'index [0-9a-f]{7,64}\.\.[0-9a-f]{7,64}(?: [0-7]{6})?|similarity index ([0-9]+)%'),
     "BINARY_LINE": re.compile(rf'Binary files (a{path_regex}+|/dev/null) and (b{path_regex}+|/dev/null) differ'),
     "RENAME_FROM": re.compile(rf'rename from ({path_regex})'),
     "RENAME_TO": re.compile(rf'rename to ({path_regex})'),
@@ -158,6 +158,7 @@ def fix_patch(patch_lines, original):
                 last_mode = i
                 fixed_lines.append(normalize_line(line))
             case "INDEX_LINE":
+                # TODO: verify that mode is present for anything but deletion
                 last_index = i
                 similarity_index = match_groups[0]
                 if similarity_index:
