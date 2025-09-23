@@ -4,6 +4,8 @@ import re
 import sys
 from pathlib import Path
 
+from git import Repo
+
 path_regex = r'(?:/[A-Za-z0-9_.-]+)*'
 regexes = {
     "DIFF_LINE": re.compile(rf'diff --git (a{path_regex}+) (b{path_regex}+)'),
@@ -104,6 +106,31 @@ def capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context):
     return fixed_header, offset, last_hunk
 
 
+def regenerate_index(old_path, new_path, cur_dir):
+    repo = Repo(cur_dir)
+    mode = " 100644"     # TODO: check if mode can be a different number
+
+    # file creation
+    if old_path == "/dev/null":
+        assert new_path != "/dev/null", "Paths cannot both be /dev/null"
+        old_sha = "0000000"
+        new_sha = repo.git.hash_object(new_path)
+
+    # file deletion
+    elif new_path == "/dev/null":
+        old_sha = repo.git.hash_object(old_path)
+        new_sha = "0000000"
+        mode = ""   # deleted file can't have a mode
+
+    else:
+        raise NotImplementedError(
+            "Regenerating index not yet supported in the general case, "
+            "as this would require manually applying the patch first."
+        )
+
+    return f"index {old_sha}..{new_sha}{mode}"
+
+
 def fix_patch(patch_lines, original):
     dir_mode = os.path.isdir(original)
     original_path = Path(original).absolute()
@@ -124,6 +151,7 @@ def fix_patch(patch_lines, original):
     file_end_header = False
     look_for_rename = False
     similarity_index = None
+    missing_index = False
     hunk_context = ""
 
     for i, line in enumerate(patch_lines):
@@ -164,13 +192,17 @@ def fix_patch(patch_lines, original):
                 if similarity_index:
                     look_for_rename = True
                 fixed_lines.append(normalize_line(line))
+                missing_index = False
             case "BINARY_LINE":
                 raise NotImplementedError("Binary files not supported yet")
             case "RENAME_FROM":
                 if not look_for_rename:
                     pass    # TODO: handle missing index line
                 if last_index != i - 1:
-                    raise NotImplementedError("Missing index line not yet supported")
+                    missing_index = True    # need this for existence check in RENAME_TO block
+                    similarity_index = 100  # TODO: is this a dangerous assumption?
+                    fixed_index = "similarity index 100%"
+                    fixed_lines.append(normalize_line(fixed_index))
                 look_for_rename = False
                 current_file = match_groups[0]
                 current_path = Path(current_file).absolute()
@@ -190,8 +222,11 @@ def fix_patch(patch_lines, original):
                 else:
                     raise FileNotFoundError(f"Filename {current_file} in `rename from` header does not match argument {original}")
             case "RENAME_TO":
-                if last_index != i - 2:     # TODO: make this check more robust
-                    raise NotImplementedError("Missing `rename from` header not yet supported.")
+                if last_index != i - 2:
+                    if missing_index:
+                        missing_index = False
+                    else:
+                        raise NotImplementedError("Missing `rename from` header not yet supported.")
                 if look_for_rename:
                     # the old file doesn't exist, so we need to read this one
                     current_file = match_groups[0]
@@ -205,7 +240,7 @@ def fix_patch(patch_lines, original):
                 if look_for_rename:
                     raise NotImplementedError("Replacing file header with rename not yet supported.")
                 if last_index != i - 1:
-                    raise NotImplementedError("Missing index line not yet supported")
+                    missing_index = True
                 file_end_header = False
                 if current_file and not dir_mode:
                     raise ValueError("Diff references multiple files but only one provided.")
@@ -241,6 +276,9 @@ def fix_patch(patch_lines, original):
                     dest_file = dest_file[2:]
                 elif dest_file != "/dev/null":
                     line = line.replace(dest_file, f"b/{dest_file}")
+                if missing_index:
+                    fixed_index = regenerate_index(current_file, dest_file, original_path)
+                    fixed_lines.append(normalize_line(fixed_index))
                 if not file_start_header:
                     if dest_file == "/dev/null":
                         if last_diff > last_mode:
