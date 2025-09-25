@@ -110,14 +110,8 @@ def regenerate_index(old_path, new_path, cur_dir):
     repo = Repo(cur_dir)
     mode = " 100644"     # TODO: check if mode can be a different number
 
-    # file creation
-    if old_path == "/dev/null":
-        assert new_path != "/dev/null", "Paths cannot both be /dev/null"
-        old_sha = "0000000"
-        new_sha = repo.git.hash_object(new_path)
-
     # file deletion
-    elif new_path == "/dev/null":
+    if new_path == "/dev/null":
         old_sha = repo.git.hash_object(old_path)
         new_sha = "0000000"
         mode = ""   # deleted file can't have a mode
