@@ -197,6 +197,7 @@ def fix_patch(patch_lines, original):
                     similarity_index = 100  # TODO: is this a dangerous assumption?
                     fixed_index = "similarity index 100%"
                     fixed_lines.append(normalize_line(fixed_index))
+                    last_index = i - 1
                 look_for_rename = False
                 current_file = match_groups[0]
                 current_path = Path(current_file).absolute()
@@ -219,6 +220,7 @@ def fix_patch(patch_lines, original):
                 if last_index != i - 2:
                     if missing_index:
                         missing_index = False
+                        last_index = i - 2
                     else:
                         raise NotImplementedError("Missing `rename from` header not yet supported.")
                 if look_for_rename:
@@ -235,6 +237,7 @@ def fix_patch(patch_lines, original):
                     raise NotImplementedError("Replacing file header with rename not yet supported.")
                 if last_index != i - 1:
                     missing_index = True
+                    last_index = i - 1
                 file_end_header = False
                 if current_file and not dir_mode:
                     raise ValueError("Diff references multiple files but only one provided.")
@@ -273,6 +276,7 @@ def fix_patch(patch_lines, original):
                 if missing_index:
                     fixed_index = regenerate_index(current_file, dest_file, original_path)
                     fixed_lines.append(normalize_line(fixed_index))
+                    last_index = i - 2
                 if not file_start_header:
                     if dest_file == "/dev/null":
                         if last_diff > last_mode:
@@ -300,7 +304,15 @@ def fix_patch(patch_lines, original):
                     else:
                         raise FileNotFoundError(f"Filename {current_file} in header does not match argument {original}")
                 elif dest_file == "/dev/null":
-                    raise NotImplementedError("File deletion not yet supported")
+                    # TODO: check if other modes are possible
+                    if last_mode < last_diff:
+                        last_mode = last_diff + 1
+                        fixed_lines.insert(last_mode, "deleted file mode 100644")
+                        last_index += 1     # index comes after mode
+                    elif "deleted" not in fixed_lines[last_mode]:
+                        fixed_lines[last_mode] = "deleted file mode 100644"
+                    else:
+                        fixed_lines.append("deleted file mode 100644")
                 elif current_file != dest_file:
                     raise ValueError(f"File headers do not match: \n{current_file}\n{dest_file}")
                 pass

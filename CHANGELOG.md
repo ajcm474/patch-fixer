@@ -1,3 +1,7 @@
+## Version 0.2.1
+- Experimentally support file deletion in file headers
+- Update index counting
+
 ## Version 0.2.0
 - Move `GitPython` out of test requirements and into main requirements
 - Fix a few outstanding bugs with how index lines were parsed
