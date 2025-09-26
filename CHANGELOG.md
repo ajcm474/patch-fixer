@@ -1,3 +1,6 @@
+## Version 0.2.2
+- List package on PyPI
+
 ## Version 0.2.1
 - Experimentally support file deletion in file headers
 - Update index counting

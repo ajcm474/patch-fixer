@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "patch-fixer"
-version = "0.2.1"
+version = "0.2.2"
 description = "Fixes erroneous git apply patches to the best of its ability."
 maintainers = [
     {name = "Alex Mueller", email="amueller474@gmail.com"},
@@ -33,3 +37,7 @@ test = [
     "pytest",
     "requests"
 ]
+
+[project.urls]
+Homepage = "https://github.com/ajcm474/patch-fixer"
+Issues = "https://github.com/ajcm474/patch-fixer/issues"
