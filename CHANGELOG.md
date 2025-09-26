@@ -1,3 +1,7 @@
+## Version 0.2.3
+- Update README to reflect new usage patterns now that this package is available on PyPI
+- Fix bug in error message when a hunk is not found
+
 ## Version 0.2.2
 - List package on PyPI
 
