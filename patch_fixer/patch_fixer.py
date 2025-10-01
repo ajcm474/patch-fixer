@@ -87,14 +87,20 @@ def capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context):
     old_count = sum(1 for l in current_hunk if l.startswith((' ', '-')))
     new_count = sum(1 for l in current_hunk if l.startswith((' ', '+')))
 
-    # compute starting line in original file
-    old_start = find_hunk_start(current_hunk, original_lines) + 1
+    if old_count > 0:
+        # compute starting line in original file
+        old_start = find_hunk_start(current_hunk, original_lines) + 1
 
-    # if the line number descends, we either have a bad match or a new file
-    if old_start < last_hunk:
-        raise MissingHunkError
+        # if the line number descends, we either have a bad match or a new file
+        if old_start < last_hunk:
+            raise MissingHunkError
+        else:
+            new_start = old_start + offset
     else:
-        new_start = old_start + offset
+        # old count of zero can only mean file creation, since adding lines to
+        # an existing file requires surrounding context lines without a +
+        old_start = 0
+        new_start = 1   # line numbers are 1-indexed in the real world
 
     offset += (new_count - old_count)
 
@@ -125,7 +131,7 @@ def regenerate_index(old_path, new_path, cur_dir):
     return f"index {old_sha}..{new_sha}{mode}"
 
 
-def fix_patch(patch_lines, original):
+def fix_patch(patch_lines, original, remove_binary=False):
     dir_mode = os.path.isdir(original)
     original_path = Path(original).absolute()
 
@@ -146,6 +152,7 @@ def fix_patch(patch_lines, original):
     look_for_rename = False
     similarity_index = None
     missing_index = False
+    binary_file = False
     hunk_context = ""
 
     for i, line in enumerate(patch_lines):
@@ -168,12 +175,13 @@ def fix_patch(patch_lines, original):
                     current_hunk = []
                 a, b = split_ab(match_groups)
                 if a != b:
-                    raise ValueError(f"Diff paths do not match: \n{a}\n{b}")
+                    look_for_rename = True
                 fixed_lines.append(normalize_line(line))
                 last_diff = i
                 file_start_header = False
                 file_end_header = False
                 first_hunk = True
+                binary_file = False
             case "MODE_LINE":
                 if last_diff != i - 1:
                     raise NotImplementedError("Missing diff line not yet supported")
@@ -188,10 +196,15 @@ def fix_patch(patch_lines, original):
                 fixed_lines.append(normalize_line(line))
                 missing_index = False
             case "BINARY_LINE":
-                raise NotImplementedError("Binary files not supported yet")
+                if remove_binary:
+                    raise NotImplementedError("Ignoring binary files not yet supported")
+                binary_file = True
+                fixed_lines.append(normalize_line(line))
             case "RENAME_FROM":
                 if not look_for_rename:
                     pass    # TODO: handle missing index line
+                if binary_file:
+                    raise NotImplementedError("Renaming binary files not yet supported")
                 if last_index != i - 1:
                     missing_index = True    # need this for existence check in RENAME_TO block
                     similarity_index = 100  # TODO: is this a dangerous assumption?
@@ -235,6 +248,10 @@ def fix_patch(patch_lines, original):
             case "FILE_HEADER_START":
                 if look_for_rename:
                     raise NotImplementedError("Replacing file header with rename not yet supported.")
+                if binary_file:
+                    raise NotImplementedError("A header block with both 'binary files differ' and "
+                                              "file start/end headers is a confusing state"
+                                              "\nfrom which there is no obvious way to recover.")
                 if last_index != i - 1:
                     missing_index = True
                     last_index = i - 1
@@ -267,6 +284,10 @@ def fix_patch(patch_lines, original):
             case "FILE_HEADER_END":
                 if look_for_rename:
                     raise NotImplementedError("Replacing file header with rename not yet supported.")
+                if binary_file:
+                    raise NotImplementedError("A header block with both 'binary files differ' and "
+                                              "file start/end headers is a confusing state"
+                                              "\nfrom which there is no obvious way to recover.")
                 dest_file = match_groups[0]
                 dest_path = Path(dest_file).absolute()
                 if dest_file.startswith("b/"):
@@ -291,20 +312,22 @@ def fix_patch(patch_lines, original):
                 elif current_file == "/dev/null":
                     if dest_file == "/dev/null":
                         raise ValueError("File headers cannot both be /dev/null")
-                    elif not dest_path.exists():
-                        raise FileNotFoundError(f"File header end points to non-existent file: {dest_file}")
+                    elif dest_path.exists():
+                        raise FileExistsError(f"File header start /dev/null implies file creation, "
+                                              f"but file header end would overwrite existing file: {dest_file}")
                     current_file = dest_file
                     current_path = Path(current_file).absolute()
                     if dir_mode or current_path == original_path:
-                        # TODO: in dir mode, verify that current file exists in original path
-                        with open(current_path, encoding='utf-8') as f:
-                            original_lines = [l.rstrip('\n') for l in f.readlines()]
+                        original_lines = []
                         fixed_lines.append(normalize_line(line))
                         file_end_header = True
                     else:
                         raise FileNotFoundError(f"Filename {current_file} in header does not match argument {original}")
                 elif dest_file == "/dev/null":
                     # TODO: check if other modes are possible
+                    current_path = Path(current_file).absolute()
+                    if not current_path.exists():
+                        raise FileNotFoundError(f"The file being 'deleted' does not exist: {current_file}")
                     if last_mode < last_diff:
                         last_mode = last_diff + 1
                         fixed_lines.insert(last_mode, "deleted file mode 100644")
@@ -317,6 +340,8 @@ def fix_patch(patch_lines, original):
                     raise ValueError(f"File headers do not match: \n{current_file}\n{dest_file}")
                 pass
             case "HUNK_HEADER":
+                if binary_file:
+                    raise ValueError("Binary file can't have a hunk header.")
                 # fix missing file headers before capturing the hunk
                 if not file_end_header:
                     diff_line = patch_lines[last_diff]
