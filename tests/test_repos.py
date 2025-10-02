@@ -36,6 +36,7 @@ REPOS = {
 
 CACHE_DIR = Path.home() / ".patch-testing"
 
+
 class DeletedBranchError(ValueError):
     def __init__(self, commit_hash):
         self.commit_hash = commit_hash
@@ -47,7 +48,7 @@ def verify_commit_exists(repo: Repo, commit_hash: str) -> None:
     try:
         repo.commit(commit_hash)
     except ValueError:
-        # Commit belongs to a deleted branch (let caller handle it)
+        # commit belongs to a deleted branch (let caller handle it)
         raise DeletedBranchError(commit_hash)
 
 
@@ -64,13 +65,13 @@ def download_commit_zip(repo_url, commit_hash: str, dest_path: Path) -> None:
         print(f"Failed to download commit snapshot: {e}")
         sys.exit(1)
 
-    # Extract the zip into dest_path
+    # extract the zip into dest_path
     with zipfile.ZipFile(io.BytesIO(r.content)) as z:
         # GitHub wraps contents in a top-level folder named like repo-<hash>
         top_level = z.namelist()[0].split("/")[0]
         z.extractall(dest_path.parent)
 
-        # Move extracted folder to dest_path
+        # move extracted folder to dest_path
         extracted_path = dest_path.parent / top_level
         if dest_path.exists():
             shutil.rmtree(dest_path)
@@ -111,7 +112,7 @@ def clone_repos(repo_group, repo_name, old_commit, new_commit):
             # no sense keeping around an object that points to HEAD
             repo_new = Repo(repo_new_path)
 
-        # Prevent downloading the repo twice if we can help it
+        # prevent downloading the repo twice if we can help it
         shutil.copytree(repo_new_path, repo_old_path)
         repo_old = Repo(repo_old_path)
         try:
@@ -137,7 +138,7 @@ def test_integration_equality(repo_group, repo_name, old_commit, new_commit):
     ) = clone_repos(repo_group, repo_name, old_commit, new_commit)
 
     expected = repo_new.git.diff(old_commit, new_commit)
-    input_lines = expected.splitlines()
+    input_lines = expected.splitlines(keepends=True)
     fixed_lines = fix_patch(input_lines, repo_old_path)
     actual = "".join(fixed_lines)
 
