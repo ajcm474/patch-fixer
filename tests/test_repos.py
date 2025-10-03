@@ -27,11 +27,20 @@ import pytest
 from patch_fixer import fix_patch
 
 REPOS = {
+    ("apache", "airflow"): ("26f6e54","2136f56"),   # big repo
     ("asottile", "astpretty"): ("5b68c7e", "5a8296f"),
+    ("astral-sh", "ruff"): ("7fee877", "11dae2c"),
+    ("gabrielecirulli", "2048"): ("878098f", "478b6ec"),    # adds binary files
+    ("mrdoob", "three.js"): ("5f3a718", "b97f111"),         # replaces images
+    ("myriadrf", "LimeSDR-Mini"): ("0bb75e7", "fb012c8"),   # gigantic diffs
     ("numpy", "numpy"): ("dca33b3", "5f82966"),
     ("pallets", "click"): ("93c6966", "e11a1ef"),
+    ("psf", "black"): ("8d9d18c", "903bef5"),   # whole year's worth of changes
+    ("PyCQA", "flake8"): ("8bdec0b", "d45bdc0"),    # two years of changes
     ("scipy", "scipy"): ("c2220c0", "4ca6dd9"),
+    ("tox-dev", "tox"): ("fb3fe66", "01442da"),     # four years
     ("yaml", "pyyaml"): ("48838a3", "a2d19c0"),
+    ("zertovitch", "hac"): ("c563d18", "17207ee")   # renamed binary files
 }
 
 CACHE_DIR = Path.home() / ".patch-testing"
