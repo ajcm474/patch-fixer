@@ -43,7 +43,7 @@ pytest
 ```
 From version `0.3.0` onward (at least until version `1.0`), some test failures are expected
 in bugfix versions as I like to use test-driven development to build out new features. 
-Please only report test failures if the same test passed in the most recent `0.x.0` version.
+Please only report test failures if the same test existed and passed in the most recent `0.x.0` version.
 
 ## License
 

@@ -1,3 +1,10 @@
+## Version 0.3.1
+- Make line normalization robust to edge cases
+- Add unit tests for line normalization
+- Add `hypothesis` to test requirements
+- Add more repos to integration tests, focusing on edge cases
+  - Most of these fail (growing pains are expected with TDD)
+
 ## Version 0.3.0
 - Adjust path regex to accommodate rename headers
 - Fix remaining integration test failures

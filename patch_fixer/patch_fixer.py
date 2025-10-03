@@ -25,9 +25,40 @@ class MissingHunkError(Exception):
     pass
 
 
+class BadCarriageReturn(ValueError):
+    pass
+
+
 def normalize_line(line):
-    # preserve whitespace, only normalize line endings
-    return line.rstrip("\r\n") + "\n"
+    """Normalize line endings while preserving whitespace."""
+    if not isinstance(line, str):
+        raise TypeError(f"Cannot normalize non-string object {line}")
+
+    # edge case: empty string
+    if line == "":
+        return "\n"
+
+    # special malformed ending: ...\n\r
+    if line.endswith("\n\r"):
+        raise BadCarriageReturn(f"carriage return after line feed: {line}")
+
+    # handle CRLF and simple CR/LF endings
+    if line.endswith("\r\n"):
+        core = line[:-2]
+    elif line.endswith("\r"):
+        core = line[:-1]
+    elif line.endswith("\n"):
+        core = line[:-1]
+    else:
+        core = line
+
+    # check for interior CR/LF (anything before the final terminator)
+    if "\n" in core:
+        raise ValueError(f"line feed in middle of line: {line}")
+    if "\r" in core:
+        raise BadCarriageReturn(f"carriage return in middle of line: {line}")
+
+    return core + "\n"
 
 
 def find_hunk_start(context_lines, original_lines):
