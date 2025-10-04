@@ -1,0 +1,373 @@
+diff --git a/complexity_analyzer.py b/complexity_analyzer.py
+index 1234567..abcdefg 100644
+--- a/complexity_analyzer.py
++++ b/complexity_analyzer.py
+@@ -74,6 +74,36 @@ class Complexity:
+             return other
+     
+     def _get_weight(self) -> int:
++        """Get a rough weight for complexity comparison"""
++        expr = self.expression
++        if 'n⁴' in expr or 'n^4' in expr:
++            return 4
++        elif 'n³' in expr or 'n^3' in expr:
++            return 3
++        elif 'n²' in expr or 'n^2' in expr:
++            return 2
++        elif 'n*log' in expr:
++            return 1.5
++        elif 'n' in expr:
++            return 1
++        elif 'log' in expr:
++            return 0.5
++        else:
++            return 0
++    
++    def combine_same_complexity_terms(self, expr: str) -> str:
++        """Combine terms of the same complexity with coefficients"""
++        # Split by + and analyze each term
++        if '+' not in expr:
++            return expr
++            
++        terms = expr.split('+')
++        complexity_counts = {}
++        
++        for term in terms:
++            term = term.strip()
++            # Normalize different representations of the same complexity
++            normalized = self._normalize_complexity_term(term)
++            complexity_counts[normalized] = complexity_counts.get(normalized, 0) + 1
++        
++        # Rebuild expression with coefficients
++        result_terms = []
++        for complexity, count in complexity_counts.items():
++            if count == 1:
++                result_terms.append(complexity)
++            else:
++                # Add coefficient
++                if complexity == "O(1)":
++                    result_terms.append(f"O({count})")
++                else:
++                    # Insert coefficient after O(
++                    result_terms.append(complexity.replace("O(", f"O({count}"))
++        
++        return "+".join(result_terms)
++    
++    def _normalize_complexity_term(self, term: str) -> str:
++        """Normalize complexity terms for counting"""
++        term = term.strip()
++        # Remove existing coefficients for normalization
++        import re
++        # Match O(coefficient*rest) or O(coefficient rest) patterns
++        match = re.match(r'O\((\d+\*?)?([^)]+)\)', term)
++        if match:
++            complexity_part = match.group(2)
++            return f"O({complexity_part})"
++        return term
++    
+     def simplify(self) -> 'Complexity':
+         """Simplify the complexity expression WITHOUT reducing to dominant term"""
+         expr = self.expression
+         
+         # Handle nested multiplications (convert to exponents)
+         if '*' in expr:
+-            parts = []
+-            current = ""
+-            depth = 0
+-            
+-            for char in expr:
+-                if char == '(':
+-                    depth += 1
+-                    current += char
+-                elif char == ')':
+-                    depth -= 1
+-                    current += char
+-                elif char == '*' and depth == 0:
+-                    parts.append(current)
+-                    current = ""
+-                else:
+-                    current += char
+-            
+-            if current:
+-                parts.append(current)
+-            
+-            # Count O(n) occurrences
+-            n_count = sum(1 for p in parts if p == "O(n)")
+-            other_parts = [p for p in parts if p != "O(n)" and p != "O(1)"]
+-            
+-            if n_count >= 2:
+-                power_notation = {2: "²", 3: "³", 4: "⁴"}
+-                if n_count in power_notation:
+-                    result = f"O(n{power_notation[n_count]})"
+-                else:
+-                    result = f"O(n^{n_count})"
+-                
+-                # Add other multiplicative factors
+-                for part in other_parts:
+-                    if "log" in part:
+-                        result = result.replace(")", "*log(n))")
+-                    elif part and part != "O(1)":
+-                        result = f"{result}*{part}"
+-                
+-                expr = result
+-            elif n_count == 1:
+-                # Single O(n) with other factors
+-                result = "O(n)"
+-                for part in other_parts:
+-                    if "log" in part:
+-                        result = "O(n*log(n))"
+-                    elif part and part != "O(1)":
+-                        result = f"{result}*{part}"
+-                expr = result
++            expr = self._simplify_multiplication(expr)
+         
+         # Clean up redundant O(1) in additions, but keep all other terms
+         if '+' in expr:
+             parts = expr.split('+')
+             # Remove O(1) only if there are other non-constant terms
+             non_constant = [p for p in parts if p != "O(1)"]
+             if non_constant:
+                 expr = '+'.join(non_constant)
+             else:
+                 expr = "O(1)"
++        
++        # Combine terms of the same complexity
++        if '+' in expr:
++            expr = self.combine_same_complexity_terms(expr)
++        
++        # If empty, return O(1)
++        if not expr:
++            expr = "O(1)"
++        
++        return Complexity(expr, self.is_approximate, self.details)
++    
++    def _simplify_multiplication(self, expr: str) -> str:
++        """Simplify multiplication of complexity terms"""
++        import re
++        
++        # Handle complex multiplications properly
++        # First, let's count different types of terms
++        
++        # Match patterns like O(n), O(n²), O(log(n)), O(n*log(n)), etc.
++        terms = re.findall(r'O\([^)]+\)', expr)
++        
++        n_power = 0
++        log_count = 0
++        constant_terms = []
++        
++        for term in terms:
++            if term == "O(1)":
++                continue
++            elif term == "O(n)":
++                n_power += 1
++            elif "n²" in term or "n^2" in term:
++                n_power += 2
++            elif "n³" in term or "n^3" in term:
++                n_power += 3
++            elif "n⁴" in term or "n^4" in term:
++                n_power += 4
++            elif re.match(r'O\(n\^(\d+)\)', term):
++                match = re.match(r'O\(n\^(\d+)\)', term)
++                n_power += int(match.group(1))
++            elif "n*log(n)" in term:
++                n_power += 1
++                log_count += 1
++            elif "log(n)" in term:
++                log_count += 1
++            else:
++                constant_terms.append(term)
++        
++        # Build result
++        if n_power == 0 and log_count == 0:
++            return "O(1)"
++        elif n_power == 0:
++            return f"O(log(n))" if log_count == 1 else f"O(log(n)^{log_count})"
++        else:
++            # Build the n component
++            if n_power == 1:
++                result = "O(n"
++            elif n_power == 2:
++                result = "O(n²"
++            elif n_power == 3:
++                result = "O(n³"
++            elif n_power == 4:
++                result = "O(n⁴"
++            else:
++                result = f"O(n^{n_power}"
++            
++            # Add log component if present
++            if log_count > 0:
++                if log_count == 1:
++                    result += "*log(n)"
++                else:
++                    result += f"*log(n)^{log_count}"
++            
++            result += ")"
++            
++            return result
+         
+-        # If empty, return O(1)
+-        if not expr:
+-            expr = "O(1)"
+-        
+-        return Complexity(expr, self.is_approximate, self.details)
+
+ @dataclass
+ class AntiPattern:
+@@ -123,11 +221,13 @@ class Analyzer(ast.NodeVisitor):
+     def __init__(self):
+         self.functions: Dict[str, Complexity] = {}
+         self.variable_types: Dict[str, str] = {}
++        self.variable_element_types: Dict[str, str] = {}  # For List[int] -> element type
+         self.call_stack: List[str] = []  # Track call stack for recursion
+         self.max_call_depth = 3
+         self.current_class = None
+         self.results: List[FunctionAnalysis] = []
+         self.anti_patterns: List[AntiPattern] = []
++        self.local_variables: Dict[str, str] = {}  # Track variables in current scope
+         
+     def analyze_file(self, content: str, filename: str = "<file>") -> List[FunctionAnalysis]:
+         """Analyze Python file content"""
+@@ -150,6 +250,7 @@ class Analyzer(ast.NodeVisitor):
+         """Visit function definition"""
+         self.anti_patterns = []
+         self.variable_types.clear()
++        self.local_variables.clear()
+         self.call_stack = []  # Reset call stack for each function
+         
+         # Extract type annotations from parameters
+@@ -158,8 +259,20 @@ class Analyzer(ast.NodeVisitor):
+                 if isinstance(arg.annotation, ast.Subscript):
+                     # Handle List[int], Dict[str, int], etc.
+                     if isinstance(arg.annotation.value, ast.Name):
+-                        self.variable_types[arg.arg] = arg.annotation.value.id
++                        container_type = arg.annotation.value.id
++                        self.variable_types[arg.arg] = container_type
++                        
++                        # Extract element type for List[T]
++                        if isinstance(arg.annotation.slice, ast.Name):
++                            element_type = arg.annotation.slice.id
++                            self.variable_element_types[arg.arg] = element_type
++                        elif isinstance(arg.annotation.slice, ast.Subscript):
++                            # Handle List[List[int]] etc.
++                            if isinstance(arg.annotation.slice.value, ast.Name):
++                                self.variable_element_types[arg.arg] = arg.annotation.slice.value.id
+                 elif isinstance(arg.annotation, ast.Name):
+                     self.variable_types[arg.arg] = arg.annotation.id
++                    self.local_variables[arg.arg] = arg.annotation.id
+         
+         # Analyze function body
+         complexity = self.analyze_body(node.body)
+@@ -196,6 +309,8 @@ class Analyzer(ast.NodeVisitor):
+     def analyze_statement(self, stmt: ast.stmt) -> Complexity:
+         """Analyze a single statement"""
+         if isinstance(stmt, ast.For):
++            # Track loop variable type if we can determine it
++            self._track_loop_variable_type(stmt)
+             return self.analyze_for_loop(stmt)
+         elif isinstance(stmt, ast.While):
+             return self.analyze_while_loop(stmt)
+@@ -211,12 +326,39 @@ class Analyzer(ast.NodeVisitor):
+         elif isinstance(stmt, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
+             if isinstance(stmt, ast.Assign):
++                # Track variable assignments
++                self._track_assignment(stmt)
+                 return self.analyze_expr(stmt.value)
+             elif isinstance(stmt, ast.AugAssign):
+                 return self.analyze_expr(stmt.value)
+             elif isinstance(stmt, ast.AnnAssign) and stmt.value:
++                self._track_annotated_assignment(stmt)
+                 return self.analyze_expr(stmt.value)
+             return Complexity.constant()
+         else:
+             return Complexity.constant()
++    
++    def _track_loop_variable_type(self, stmt: ast.For):
++        """Track the type of loop variables"""
++        if isinstance(stmt.target, ast.Name):
++            var_name = stmt.target.id
++            # If we're iterating over a typed container, infer element type
++            if isinstance(stmt.iter, ast.Name):
++                container_name = stmt.iter.id
++                if container_name in self.variable_element_types:
++                    self.local_variables[var_name] = self.variable_element_types[container_name]
++    
++    def _track_assignment(self, stmt: ast.Assign):
++        """Track variable assignments to infer types"""
++        if len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
++            var_name = stmt.targets[0].id
++            if isinstance(stmt.value, ast.Call) and isinstance(stmt.value.func, ast.Name):
++                if stmt.value.func.id == 'set':
++                    self.local_variables[var_name] = 'set'
++                elif stmt.value.func.id == 'list':
++                    self.local_variables[var_name] = 'list'
++    
++    def _track_annotated_assignment(self, stmt: ast.AnnAssign):
++        """Track annotated assignments"""
++        if isinstance(stmt.target, ast.Name) and isinstance(stmt.annotation, ast.Name):
++            self.local_variables[stmt.target.id] = stmt.annotation.id
+     
+     def analyze_for_loop(self, node: ast.For) -> Complexity:
+@@ -231,6 +373,10 @@ class Analyzer(ast.NodeVisitor):
+     def estimate_iteration_count(self, iter_node: ast.expr) -> Complexity:
+         """Estimate iteration count for loop iterator"""
+         if isinstance(iter_node, ast.Call):
+             if isinstance(iter_node.func, ast.Name):
+                 if iter_node.func.id == 'range':
+                     return Complexity.linear(1)
+                 elif iter_node.func.id in ('enumerate', 'zip'):
+@@ -301,9 +447,12 @@ class Analyzer(ast.NodeVisitor):
+             elif func_name in self.functions:
+                 # Check recursion depth
+                 if func_name in self.call_stack:
+-                    # Already in call stack - check depth
+-                    depth = self.call_stack.count(func_name)
+-                    if depth >= self.max_call_depth:
+-                        complexity = Complexity.approximate("O(?)")
+-                        complexity.with_detail(f"max recursion depth {self.max_call_depth} reached for {func_name}")
++                    # Already in call stack - reached recursion limit
++                    # Calculate complexity so far and mark as "at least"
++                    current_complexity = self.functions[func_name]
++                    complexity = Complexity.approximate(f"at least {current_complexity.expression}")
++                    complexity.with_detail(f"maximum recursion depth {self.max_call_depth} reached")
+                     else:
+                         # Allow the recursive call but track it
+                         self.call_stack.append(func_name)
+@@ -311,6 +460,11 @@ class Analyzer(ast.NodeVisitor):
+                         self.call_stack.pop()
+                 else:
+-                    # First call to this function
+-                    self.call_stack.append(func_name)
+-                    complexity = self.functions[func_name]
+-                    self.call_stack.pop()
++                    # Check total call depth
++                    if len(self.call_stack) >= self.max_call_depth:
++                        current_complexity = self.functions[func_name]
++                        complexity = Complexity.approximate(f"at least {current_complexity.expression}")
++                        complexity.with_detail(f"maximum recursion depth {self.max_call_depth} reached")
++                    else:
++                        # First call to this function
++                        self.call_stack.append(func_name)
++                        complexity = self.functions[func_name]
++                        self.call_stack.pop()
+             else:
+                 complexity = Complexity.approximate("O(?)")
+                 complexity.with_detail(f"unknown function: {func_name}")
+@@ -375,6 +529,16 @@ class Analyzer(ast.NodeVisitor):
+                     elif isinstance(comparator, ast.Name):
+                         # Check variable type if known
+-                        var_type = self.variable_types.get(comparator.id)
++                        var_type = (self.local_variables.get(comparator.id) or 
++                                  self.variable_types.get(comparator.id))
+                         if var_type in ('List', 'list'):
+                             self.anti_patterns.append(AntiPattern(
+                                 line=node.lineno,
+@@ -382,7 +546,7 @@ class Analyzer(ast.NodeVisitor):
+                                 description="Membership test with List type - consider using Set for O(1) lookup instead of O(n)"
+                             ))
+                             return Complexity.linear(1).with_detail("list membership check")
+-                        elif var_type in ('Set', 'set', 'Dict', 'dict'):
++                        elif var_type in ('Set', 'set', 'Dict', 'dict'):
+                             return Complexity.constant().with_detail("set/dict membership check")
+                         else:
+                             # Unknown type - assume worst case (list)
