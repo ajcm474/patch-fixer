@@ -71,9 +71,20 @@ def test_normalize_line_hypothesis(line):
         result = normalize_line(line)
     except BadCarriageReturn:
         # must have an interior CR somewhere, or malformed ending
-        cr_condition = (("\r" in line[:-2])
-                        or (line.endswith("\r") and not line.endswith("\r\n"))
-                        or line.endswith("\n\r"))
+        # interior CR means: after removing any valid line ending, there's still a CR
+        if line.endswith("\r\n"):
+            core = line[:-2]
+        elif line.endswith("\r"):
+            core = line[:-1]
+        elif line.endswith("\n"):
+            core = line[:-1]
+        else:
+            core = line
+
+        cr_condition = (
+                "\r" in core  # CR in the core content
+                or line.endswith("\n\r")  # malformed LF+CR ending
+        )
         assert cr_condition, f"BadCarriageReturn raised unexpectedly for line: {line!r}"
     except ValueError:
         # must have an interior LF somewhere
