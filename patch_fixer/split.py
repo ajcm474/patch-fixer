@@ -111,8 +111,8 @@ def split_patch(patch_lines: List[str], files_to_include: List[str]) -> Tuple[Li
         else:
             excluded_lines.extend(current_file_lines)
 
-    # handle edge case where no files were split
-    if not included_lines and not excluded_lines:
+    # handle edge case where no files were split (no diff lines)
+    if not in_file_block:
         # patch had no diff lines at all
         return patch_lines, []
 

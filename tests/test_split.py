@@ -71,12 +71,12 @@ class TestSplitPatch:
         # verify file1 and file3 are included
         assert "file1.txt" in "".join(included)
         assert "file3.txt" in "".join(included)
-        assert "new1\n" in included
-        assert "new3\n" in included
+        assert "+new1\n" in included
+        assert "+new3\n" in included
 
         # verify file2 is excluded
         assert "file2.txt" in "".join(excluded)
-        assert "new2\n" in excluded
+        assert "+new2\n" in excluded
         assert "file1.txt" not in "".join(excluded)
         assert "file3.txt" not in "".join(excluded)
 
@@ -216,6 +216,7 @@ class TestSplitPatch:
         """Test behavior with invalid diff format."""
         invalid_patch = [
             "not a valid diff line\n",
+            "diff --git a/file.txt b/file.txt\n",
             "--- a/file.txt\n",
             "+++ b/file.txt\n",
             "@@ -1,1 +1,1 @@\n",
