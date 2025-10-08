@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "patch-fixer"
-version = "0.3.2"
+version = "0.3.3"
 description = "Fixes erroneous git apply patches to the best of its ability."
 maintainers = [
     {name = "Alex Mueller", email="amueller474@gmail.com"},
@@ -31,6 +31,9 @@ license = 'Apache-2.0'
 license-files = [
     'LICENSE'
 ]
+
+[project.scripts]
+patch-fixer = "patch_fixer.cli:main"
 
 [project.optional-dependencies]
 test = [

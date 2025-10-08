@@ -1,3 +1,10 @@
+## Version 0.3.3
+- Add unified command-line interface with `patch-fixer` command
+- Support both `fix` and `split` subcommands
+- Fix hypothesis test for line normalization
+- Update README with comprehensive usage documentation
+- Add console script entry point for easier CLI access
+
 ## Version 0.3.2
 - Implement `split_patch` function for dividing patches by file lists
 - Fix f-string syntax errors in `patch_fixer.py`  
