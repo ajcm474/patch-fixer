@@ -1,3 +1,8 @@
+## Version 0.3.2
+- Implement `split_patch` function for dividing patches by file lists
+- Fix f-string syntax errors in `patch_fixer.py`  
+- Add comprehensive tests for `split_patch` functionality
+
 ## Version 0.3.1
 - Make line normalization robust to edge cases
 - Add unit tests for line normalization

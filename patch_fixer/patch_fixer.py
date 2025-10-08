@@ -204,7 +204,7 @@ def fix_patch(patch_lines, original, remove_binary=False):
                         ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context)
                     except MissingHunkError:
                         raise NotImplementedError(f"Could not find hunk in {current_file}:"
-                                                  f"\n\n{"".join(current_hunk)}")
+                                                  f"\n\n{''.join(current_hunk)}")
                     fixed_lines.append(fixed_header)
                     fixed_lines.extend(current_hunk)
                     current_hunk = []
@@ -415,7 +415,7 @@ def fix_patch(patch_lines, original, remove_binary=False):
                     ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context)
                 except MissingHunkError:
                     raise NotImplementedError(f"Could not find hunk in {current_file}:"
-                                              f"\n\n{"".join(current_hunk)}")
+                                              f"\n\n{''.join(current_hunk)}")
                 fixed_lines.append(fixed_header)
                 fixed_lines.extend(current_hunk)
                 current_hunk = []
@@ -437,7 +437,7 @@ def fix_patch(patch_lines, original, remove_binary=False):
         ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context)
     except MissingHunkError:
         raise NotImplementedError(f"Could not find hunk in {current_file}:"
-                                  f"\n\n{"".join(current_hunk)}")
+                                  f"\n\n{''.join(current_hunk)}")
     fixed_lines.append(fixed_header)
     fixed_lines.extend(current_hunk)
 
