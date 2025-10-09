@@ -64,10 +64,11 @@ def normalize_line(line):
 
 def fuzzy_line_similarity(line1, line2, threshold=0.8):
     """Calculate similarity between two lines using a simple ratio."""
-    if not line1 or not line2:
-        return 0.0
-
     l1, l2 = line1.strip(), line2.strip()
+
+    # empty strings are identical
+    if len(l1) == 0 and len(l2) == 0:
+        return 1.0
 
     if l1 == l2:
         return 1.0
