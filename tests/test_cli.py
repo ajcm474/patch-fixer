@@ -21,39 +21,39 @@ class TestCLI:
             assert 'usage: patch-fixer' in captured.out
             assert 'Available commands' in captured.out
 
-        def test_fix_command(self):
-            """Test the fix command in directory mode."""
-            with tempfile.TemporaryDirectory() as tmpdir:
-                # create test files
-                original_file = os.path.join(tmpdir, 'original.txt')
-                with open(original_file, 'w') as f:
-                    f.write("line1\nline2\nline3\n")
+    def test_fix_command(self):
+        """Test the fix command in directory mode."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # create test files
+            original_file = os.path.join(tmpdir, 'original.txt')
+            with open(original_file, 'w') as f:
+                f.write("line1\nline2\nline3\n")
 
-                broken_patch = os.path.join(tmpdir, 'broken.patch')
-                with open(broken_patch, 'w') as f:
-                    f.write("""diff --git a/original.txt b/original.txt
-    --- a/original.txt
-    +++ b/original.txt
-    @@ -1,3 +1,3 @@
-     line1
-    -line2
-    +modified line2
-     line3
-    """)
+            broken_patch = os.path.join(tmpdir, 'broken.patch')
+            with open(broken_patch, 'w') as f:
+                f.write("""diff --git a/original.txt b/original.txt
+--- a/original.txt
++++ b/original.txt
+@@ -1,3 +1,3 @@
+ line1
+-line2
++modified line2
+ line3
+""")
 
-                output_patch = os.path.join(tmpdir, 'fixed.patch')
+            output_patch = os.path.join(tmpdir, 'fixed.patch')
 
-                # use directory mode to work around bug in file mode
-                with patch('sys.argv', ['patch-fixer', 'fix', tmpdir, broken_patch, output_patch]):
-                    result = main()
+            # use directory mode to work around bug in file mode
+            with patch('sys.argv', ['patch-fixer', 'fix', tmpdir, broken_patch, output_patch]):
+                result = main()
 
-                assert result == 0
-                assert os.path.exists(output_patch)
+            assert result == 0
+            assert os.path.exists(output_patch)
 
-                with open(output_patch) as f:
-                    content = f.read()
-                    assert 'diff --git' in content
-                    assert 'modified line2' in content
+            with open(output_patch) as f:
+                content = f.read()
+                assert 'diff --git' in content
+                assert 'modified line2' in content
 
     def test_split_command_with_files(self):
         """Test the split command with files specified on command line."""
@@ -139,6 +139,69 @@ diff --git a/file2.txt b/file2.txt
             with open(excluded) as f:
                 content = f.read()
                 assert 'file2.txt' in content
+
+    def test_fuzzy_match_option(self):
+        """Test the --fuzzy-match option."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # create test files
+            original_file = os.path.join(tmpdir, 'original.txt')
+            with open(original_file, 'w') as f:
+                f.write("line one\nline two\nline three\n")
+
+            broken_patch = os.path.join(tmpdir, 'broken.patch')
+            with open(broken_patch, 'w') as f:
+                f.write("""diff --git a/original.txt b/original.txt
+--- a/original.txt
++++ b/original.txt
+@@ -1,3 +1,3 @@
+ line 1
+-line 2
++modified line 2
+ line 3
+""")
+
+            output_patch = os.path.join(tmpdir, 'fixed.patch')
+
+            # test with fuzzy matching enabled
+            with patch('sys.argv', ['patch-fixer', 'fix', '--fuzzy', tmpdir, broken_patch, output_patch]):
+                result = main()
+
+            assert result == 0
+            assert os.path.exists(output_patch)
+
+    def test_add_newline_option(self):
+        """Test the --add-newline option."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # create test files
+            original_file = os.path.join(tmpdir, 'original.txt')
+            with open(original_file, 'w') as f:
+                f.write("line1\nline2")  # no final newline
+
+            broken_patch = os.path.join(tmpdir, 'broken.patch')
+            with open(broken_patch, 'w') as f:
+                f.write("""diff --git a/original.txt b/original.txt
+--- a/original.txt
++++ b/original.txt
+@@ -1,2 +1,2 @@
+-line1
++modified line1
+ line2
+\\ No newline at end of file
+""")
+
+            output_patch = os.path.join(tmpdir, 'fixed.patch')
+
+            # test with add newline enabled
+            with patch('sys.argv', ['patch-fixer', 'fix', '--add-newline', tmpdir, broken_patch, output_patch]):
+                result = main()
+
+            assert result == 0
+            assert os.path.exists(output_patch)
+
+            with open(output_patch, 'r') as f:
+                content = f.read()
+                # should have newline instead of the marker
+                assert content.endswith("\n")
 
     def test_error_handling(self, capsys):
         """Test error handling in CLI."""
