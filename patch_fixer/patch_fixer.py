@@ -191,6 +191,16 @@ def capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context, 
     return fixed_header, offset, last_hunk
 
 
+def format_hunk_for_error(current_hunk):
+    """Format hunk for error messages, showing only context and deletion lines."""
+    error_lines = []
+    for line in current_hunk:
+        if line.startswith((' ', '-')):  # context or deletion lines
+            error_lines.append(line)
+        # skip addition lines (+) as they shouldn't be in the original file
+    return ''.join(error_lines)
+
+
 def regenerate_index(old_path, new_path, cur_dir):
     repo = Repo(cur_dir)
 
@@ -257,7 +267,7 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
                         ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context, fuzzy=fuzzy)
                     except MissingHunkError:
                         raise NotImplementedError(f"Could not find hunk in {current_file}:"
-                                                  f"\n\n{''.join(current_hunk)}")
+                                                  f"\n\n{format_hunk_for_error(current_hunk)}")
                     fixed_lines.append(fixed_header)
                     fixed_lines.extend(current_hunk)
                     current_hunk = []
@@ -483,7 +493,7 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
                     ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context, fuzzy=fuzzy)
                 except MissingHunkError:
                     raise NotImplementedError(f"Could not find hunk in {current_file}:"
-                                              f"\n\n{''.join(current_hunk)}")
+                                              f"\n\n{format_hunk_for_error(current_hunk)}")
                 fixed_lines.append(fixed_header)
                 fixed_lines.extend(current_hunk)
                 current_hunk = []
@@ -508,7 +518,7 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
         ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context, fuzzy=fuzzy)
     except MissingHunkError:
         raise NotImplementedError(f"Could not find hunk in {current_file}:"
-                                  f"\n\n{''.join(current_hunk)}")
+                                  f"\n\n{format_hunk_for_error(current_hunk)}")
     fixed_lines.append(fixed_header)
     fixed_lines.extend(current_hunk)
 
