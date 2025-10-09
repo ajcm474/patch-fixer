@@ -1,3 +1,10 @@
+## Version 0.3.4
+- Add comprehensive CLI tests
+- Fix bug where fix_patch would try to chdir to a file instead of its parent directory
+- Experimentally support fuzzy string matching at the line level
+  - Some tests fail; implementation subject to change
+- Address some outstanding TODOs while clarifying others
+
 ## Version 0.3.3
 - Add unified command-line interface with `patch-fixer` command
 - Support both `fix` and `split` subcommands

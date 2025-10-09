@@ -44,6 +44,7 @@ REPOS = {
 }
 
 CACHE_DIR = Path.home() / ".patch-testing"
+DIFF_CACHE_DIR = CACHE_DIR / "diffs"
 
 
 class DeletedBranchError(ValueError):
@@ -69,8 +70,7 @@ def download_commit_zip(repo_url, commit_hash: str, dest_path: Path) -> None:
     try:
         r = requests.get(url, stream=True)
         r.raise_for_status()
-    except Exception as e:
-        # TODO: don't use bare except
+    except (requests.RequestException, requests.HTTPError) as e:
         print(f"Failed to download commit snapshot: {e}")
         sys.exit(1)
 
@@ -102,11 +102,19 @@ def clone_repos(repo_group, repo_name, old_commit, new_commit):
         if not new_exists:
             shutil.copytree(repo_old_path, repo_new_path)
 
-        # TODO: handle deleted branches here too
         repo_old = Repo(repo_old_path)
         repo_new = Repo(repo_new_path)
-        repo_old.git.reset("--hard", old_commit)
-        repo_new.git.reset("--hard", new_commit)
+        try:
+            verify_commit_exists(repo_old, old_commit)
+            repo_old.git.reset("--hard", old_commit)
+        except DeletedBranchError:
+            download_commit_zip(f"https://github.com/{repo_group}/{repo_name}", old_commit, repo_old_path)
+
+        try:
+            verify_commit_exists(repo_new, new_commit)
+            repo_new.git.reset("--hard", new_commit)
+        except DeletedBranchError:
+            download_commit_zip(f"https://github.com/{repo_group}/{repo_name}", new_commit, repo_new_path)
 
     # otherwise, clone it and make a copy for each commit
     else:
@@ -133,20 +141,39 @@ def clone_repos(repo_group, repo_name, old_commit, new_commit):
     return repo_old, repo_old_path, repo_new, repo_new_path
 
 
+def get_cached_diff(repo_group, repo_name, old_commit, new_commit):
+    """Get diff from cache or generate and cache it."""
+    DIFF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    diff_filename = f"{repo_group}_{repo_name}_{old_commit}_{new_commit}.diff"
+    diff_path = DIFF_CACHE_DIR / diff_filename
+
+    if diff_path.exists():
+        with open(diff_path, 'r', encoding='utf-8') as f:
+            return f.read()
+
+    # generate diff and cache it
+    (repo_old, repo_old_path, repo_new, repo_new_path) = clone_repos(repo_group, repo_name, old_commit, new_commit)
+    diff_content = repo_new.git.diff(old_commit, new_commit)
+
+    with open(diff_path, 'w', encoding='utf-8') as f:
+        f.write(diff_content)
+
+    return diff_content
+
+
 @pytest.mark.parametrize(
     "repo_group, repo_name, old_commit, new_commit",
     [(*repo, *commits) for repo, commits in REPOS.items()]
 )
 def test_integration_equality(repo_group, repo_name, old_commit, new_commit):
     """ Make sure the patch fixer doesn't corrupt valid diffs. """
-    (
-        repo_old,
-        repo_old_path,
-        repo_new,
-        repo_new_path
-    ) = clone_repos(repo_group, repo_name, old_commit, new_commit)
+    # use cached diff if available, otherwise generate and cache it
+    expected = get_cached_diff(repo_group, repo_name, old_commit, new_commit)
 
-    expected = repo_new.git.diff(old_commit, new_commit)
+    # we still need the old repo path for the patch fixer
+    (repo_old, repo_old_path, _, _) = clone_repos(repo_group, repo_name, old_commit, new_commit)
+
     input_lines = expected.splitlines(keepends=True)
     fixed_lines = fix_patch(input_lines, repo_old_path)
     actual = "".join(fixed_lines)

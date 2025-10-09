@@ -2,6 +2,7 @@
 import os
 import re
 import sys
+import warnings
 from pathlib import Path
 
 from git import Repo
@@ -61,7 +62,29 @@ def normalize_line(line):
     return core + "\n"
 
 
-def find_hunk_start(context_lines, original_lines):
+def fuzzy_line_similarity(line1, line2, threshold=0.8):
+    """Calculate similarity between two lines using a simple ratio."""
+    if not line1 or not line2:
+        return 0.0
+
+    l1, l2 = line1.strip(), line2.strip()
+
+    if l1 == l2:
+        return 1.0
+
+    if len(l1) == 0 or len(l2) == 0:
+        return 0.0
+
+    # count common characters
+    common = 0
+    for char in set(l1) & set(l2):
+        common += min(l1.count(char), l2.count(char))
+
+    total_chars = len(l1) + len(l2)
+    return (2.0 * common) / total_chars if total_chars > 0 else 0.0
+
+
+def find_hunk_start(context_lines, original_lines, fuzzy=False):
     """Search original_lines for context_lines and return start line index (0-based)."""
     ctx = []
     for line in context_lines:
@@ -74,11 +97,33 @@ def find_hunk_start(context_lines, original_lines):
             ctx.append(line)
     if not ctx:
         raise ValueError("Cannot search for empty hunk.")
+
+    # first try exact matching
     for i in range(len(original_lines) - len(ctx) + 1):
         # this part will fail if the diff is malformed beyond hunk header
-        equal_lines = [original_lines[i+j].strip() == ctx[j].strip() for j in range(len(ctx))]
+        equal_lines = [original_lines[i + j].strip() == ctx[j].strip() for j in range(len(ctx))]
         if all(equal_lines):
             return i
+
+    # if fuzzy matching is enabled and exact match failed, try fuzzy match
+    if fuzzy:
+        best_match_score = 0.0
+        best_match_pos = 0
+
+        for i in range(len(original_lines) - len(ctx) + 1):
+            total_similarity = 0.0
+            for j in range(len(ctx)):
+                similarity = fuzzy_line_similarity(original_lines[i + j], ctx[j])
+                total_similarity += similarity
+
+            avg_similarity = total_similarity / len(ctx)
+            if avg_similarity > best_match_score and avg_similarity > 0.6:
+                best_match_score = avg_similarity
+                best_match_pos = i
+
+        if best_match_score > 0.6:
+            return best_match_pos
+
     return 0
 
 
@@ -111,14 +156,14 @@ def reconstruct_file_header(diff_line, header_type):
             raise ValueError(f"Unsupported header type: {header_type}")
 
 
-def capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context):
+def capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context, fuzzy=False):
     # compute line counts
     old_count = sum(1 for l in current_hunk if l.startswith((' ', '-')))
     new_count = sum(1 for l in current_hunk if l.startswith((' ', '+')))
 
     if old_count > 0:
         # compute starting line in original file
-        old_start = find_hunk_start(current_hunk, original_lines) + 1
+        old_start = find_hunk_start(current_hunk, original_lines, fuzzy=fuzzy) + 1
 
         # if the line number descends, we either have a bad match or a new file
         if old_start < last_hunk:
@@ -147,7 +192,11 @@ def capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context):
 
 def regenerate_index(old_path, new_path, cur_dir):
     repo = Repo(cur_dir)
-    mode = " 100644"     # TODO: check if mode can be a different number
+
+    # Common git file modes: 100644 (regular file), 100755 (executable file),
+    # 120000 (symbolic link), 160000 (submodule), 040000 (tree/directory)
+    # TODO: guess mode based on above information
+    mode = " 100644"
 
     # file deletion
     if new_path == "/dev/null":
@@ -164,12 +213,15 @@ def regenerate_index(old_path, new_path, cur_dir):
     return f"index {old_sha}..{new_sha}{mode}\n"
 
 
-def fix_patch(patch_lines, original, remove_binary=False):
+def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newline=False):
     dir_mode = os.path.isdir(original)
     original_path = Path(original).absolute()
 
     # make relative paths in the diff work
-    os.chdir(original_path)
+    if dir_mode:
+        os.chdir(original_path)
+    else:
+        os.chdir(original_path.parent)
 
     fixed_lines = []
     current_hunk = []
@@ -201,7 +253,7 @@ def fix_patch(patch_lines, original, remove_binary=False):
                             fixed_header,
                             offset,
                             last_hunk
-                        ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context)
+                        ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context, fuzzy=fuzzy)
                     except MissingHunkError:
                         raise NotImplementedError(f"Could not find hunk in {current_file}:"
                                                   f"\n\n{''.join(current_hunk)}")
@@ -224,7 +276,12 @@ def fix_patch(patch_lines, original, remove_binary=False):
                 last_mode = i
                 fixed_lines.append(normalize_line(line))
             case "INDEX_LINE":
-                # TODO: verify that mode is present for anything but deletion
+                # mode should be present in index line for all operations except file deletion
+                # for deletions, the mode is omitted since the file no longer exists
+                index_line = normalize_line(line).strip()
+                if not index_line.endswith("..0000000") and not re.search(r' [0-7]{6}$', index_line):
+                    # TODO: this is the right idea, but a poor implementation
+                    pass
                 last_index = i
                 similarity_index = match_groups[0]
                 if similarity_index:
@@ -238,7 +295,9 @@ def fix_patch(patch_lines, original, remove_binary=False):
                 fixed_lines.append(normalize_line(line))
             case "RENAME_FROM":
                 if not look_for_rename:
-                    pass    # TODO: handle missing index line
+                    # handle case where rename from appears without corresponding index line
+                    # this may indicate a malformed patch, but we can try to continue
+                    warnings.warn(f"Warning: 'rename from' found without expected index line at line {i+1}")
                 if binary_file:
                     raise NotImplementedError("Renaming binary files not yet supported")
                 if last_index != i - 1:
@@ -252,7 +311,10 @@ def fix_patch(patch_lines, original, remove_binary=False):
                 offset = 0
                 last_hunk = 0
                 if not Path.exists(current_path):
-                    # TODO: verify whether this block is necessary at all
+                    # this is meant to handle cases where the source file
+                    # doesn't exist (e.g., when applying a patch that renames
+                    # a file created earlier in the same patch)
+                    # TODO: but really, does that ever happen???
                     fixed_lines.append(normalize_line(line))
                     look_for_rename = True
                     file_loaded = False
@@ -273,7 +335,12 @@ def fix_patch(patch_lines, original, remove_binary=False):
                         last_index = i - 2
                     else:
                         raise NotImplementedError("Missing `rename from` header not yet supported.")
-                # TODO: do something sensible if `look_for_rename` is false
+                if not look_for_rename:
+                    # if we're not looking for a rename but encounter "rename to",
+                    # this indicates a malformed patch - log warning but continue
+                    warnings.warn(
+                        f"Warning: unexpected 'rename to' found at line {i + 1} without corresponding 'rename from'"
+                    )
                 current_file = match_groups[0]
                 current_path = Path(current_file).absolute()
                 if current_file and current_path.is_dir():
@@ -412,7 +479,7 @@ def fix_patch(patch_lines, original, remove_binary=False):
                         fixed_header,
                         offset,
                         last_hunk
-                    ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context)
+                    ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context, fuzzy=fuzzy)
                 except MissingHunkError:
                     raise NotImplementedError(f"Could not find hunk in {current_file}:"
                                               f"\n\n{''.join(current_hunk)}")
@@ -421,10 +488,13 @@ def fix_patch(patch_lines, original, remove_binary=False):
                 current_hunk = []
                 hunk_context = match_groups[4]
             case "END_LINE":
-                # TODO: add newline at end of file if user requests
-                fixed_lines.append(normalize_line(line))
+                # if user requested, add a newline at end of file when this marker is present
+                if add_newline:
+                    fixed_lines.append("\n")
+                else:
+                    fixed_lines.append(normalize_line(line))
             case _:
-                # TODO: fuzzy string matching
+                # TODO: fix fuzzy string matching to be less granular
                 # this is a normal line, add to current hunk
                 current_hunk.append(normalize_line(line))
 
@@ -434,7 +504,7 @@ def fix_patch(patch_lines, original, remove_binary=False):
             fixed_header,
             offset,
             last_hunk
-        ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context)
+        ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, hunk_context, fuzzy=fuzzy)
     except MissingHunkError:
         raise NotImplementedError(f"Could not find hunk in {current_file}:"
                                   f"\n\n{''.join(current_hunk)}")

@@ -14,7 +14,12 @@ def fix_command(args):
     with open(args.broken_patch, encoding='utf-8') as f:
         patch_lines = f.readlines()
 
-    fixed_lines = fix_patch(patch_lines, args.original)
+    fixed_lines = fix_patch(
+        patch_lines,
+        args.original,
+        fuzzy=args.fuzzy,
+        add_newline=args.add_newline
+    )
 
     with open(args.output, 'w', encoding='utf-8') as f:
         f.writelines(fixed_lines)
@@ -76,6 +81,16 @@ def main():
     fix_parser.add_argument(
         'output',
         help='Path where the fixed patch will be written'
+    )
+    fix_parser.add_argument(
+        '--fuzzy',
+        action='store_true',
+        help='Enable fuzzy string matching when finding hunks in original files'
+    )
+    fix_parser.add_argument(
+        '--add-newline',
+        action='store_true',
+        help='Add final newline when processing "No newline at end of file" markers'
     )
 
     # split command

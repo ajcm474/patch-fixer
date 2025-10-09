@@ -78,6 +78,13 @@ with open("excluded.patch", 'w', encoding='utf-8') as f:
     f.writelines(excluded)
 ```
 
+## Known Limitations
+
+- When fixing patches with missing `index` lines, the tool requires the files to be in a git repository to regenerate the index. This is only needed for file deletions and renames.
+- `patch-fixer` assumes the patch follows git's unified diff format.
+- Current implementation is not very robust to corrupted hunk content
+  - Much more comprehensive fuzzy string matching is planned
+
 ## Local Testing
 ```bash
 git clone https://github.com/ajcm474/patch-fixer.git
