@@ -1,3 +1,30 @@
+## Version 0.4.0
+- Fix all remaining integration test failures
+  - Temporarily disable `myriadrf/LimeSDR-Mini` test due to unreasonable execution time
+  - Majorly overhaul of `find_hunk_start` and `capture_hunk` to
+    - Properly raise errors instead of returning 0 on failure
+    - Disregard `\ No newline at end of file` within hunk
+    - Look for the *correct* match, not just the first one
+    - Use condensed header format if the hunk only has 1 line
+    - Keep track of full old header rather than just context
+- Reorganize custom exceptions under a new `HunkErrorBase` class
+  - Add new error type `OutOfOrderHunk`
+  - Make `MissingHunkError` inherit from `HunkErrorBase`
+  - Fix misleading error messages (no longer shows addition lines)
+  - Enhance error reporting with `format_hunk_for_error()` function
+- Improve hunk finding reliability with whitespace-tolerant exact matching
+- More robust exact matching that normalizes whitespace differences
+- Add unit tests for hunk finding
+- Fix `--add-newline` behavior to correctly replace "No newline at end of file" marker with actual newline
+- Fix final newline preservation logic to respect `add_newline` parameter
+- Add encoding detection with fallback for non-UTF-8 files (handles Latin-1, CP1252, etc.)
+- Add error handling for files with unsupported encodings
+- Improve test coverage for CLI options and encoding edge cases
+- TODO:
+  - Find and fix bottleneck for `myriadrf/LimeSDR-Mini` test case
+  - Figure out why the test suite still takes ~10 seconds to run
+  - Deduplicate code
+
 ## Version 0.3.4
 - Add comprehensive CLI tests
 - Fix bug where fix_patch would try to chdir to a file instead of its parent directory

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import pytest
-from patch_fixer.patch_fixer import fuzzy_line_similarity, find_hunk_start
+from patch_fixer.patch_fixer import fuzzy_line_similarity, find_hunk_start, MissingHunkError
 
 
 class TestFuzzyMatching:
@@ -63,8 +63,8 @@ class TestFuzzyMatching:
         ]
 
         # exact match should fail
-        result_exact = find_hunk_start(context_lines, original_lines, fuzzy=False)
-        assert result_exact == 0  # should return 0 when no exact match
+        with pytest.raises(MissingHunkError):
+            find_hunk_start(context_lines, original_lines, fuzzy=False)
 
         # fuzzy match should succeed
         result_fuzzy = find_hunk_start(context_lines, original_lines, fuzzy=True)

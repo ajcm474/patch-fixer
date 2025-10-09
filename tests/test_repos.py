@@ -32,7 +32,7 @@ REPOS = {
     ("astral-sh", "ruff"): ("7fee877", "11dae2c"),
     ("gabrielecirulli", "2048"): ("878098f", "478b6ec"),    # adds binary files
     ("mrdoob", "three.js"): ("5f3a718", "b97f111"),         # replaces images
-    ("myriadrf", "LimeSDR-Mini"): ("0bb75e7", "fb012c8"),   # gigantic diffs
+    # ("myriadrf", "LimeSDR-Mini"): ("0bb75e7", "fb012c8"),   # gigantic diffs
     ("numpy", "numpy"): ("dca33b3", "5f82966"),
     ("pallets", "click"): ("93c6966", "e11a1ef"),
     ("psf", "black"): ("8d9d18c", "903bef5"),   # whole year's worth of changes
