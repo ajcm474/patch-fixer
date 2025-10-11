@@ -1,3 +1,14 @@
+## Version 0.4.1
+- Achieve 4x speedup by removing whitespace-tolerant exact matching
+  - None of the integration tests needed this
+  - Fuzzy matching should cover cases with mismatched whitespace
+  - Investigation still pending for `myriadrf/LimeSDR-Mini` bottleneck
+    - This diff has 2 million+ lines, so some slowdown is expected but not infinite 
+    - The test seems to exhibit nondeterministic behavior w.r.t. `IndexError`
+    - File streaming might fix it, but that would break any middle-of-list insertion
+- Rule out file creation/deletion as a source of testing bottleneck
+- Handle paths containing spaces
+
 ## Version 0.4.0
 - Fix all remaining integration test failures
   - Temporarily disable `myriadrf/LimeSDR-Mini` test due to unreasonable execution time

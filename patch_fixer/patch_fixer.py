@@ -7,18 +7,18 @@ from pathlib import Path
 
 from git import Repo
 
-path_regex = r'(?:[A-Za-z0-9_.-]+/?)+'
+path_regex = r'[^ \n\t]+(?: [^ \n\t]+)*'
 regexes = {
-    "DIFF_LINE": re.compile(rf'diff --git (a/{path_regex}) (b/{path_regex})'),
-    "MODE_LINE": re.compile(r'(new|deleted) file mode [0-7]{6}'),
-    "INDEX_LINE": re.compile(r'index [0-9a-f]{7,64}\.\.[0-9a-f]{7,64}(?: [0-7]{6})?|similarity index ([0-9]+)%'),
-    "BINARY_LINE": re.compile(rf'Binary files (a/{path_regex}|/dev/null) and (b/{path_regex}|/dev/null) differ'),
-    "RENAME_FROM": re.compile(rf'rename from ({path_regex})'),
-    "RENAME_TO": re.compile(rf'rename to ({path_regex})'),
-    "FILE_HEADER_START": re.compile(rf'--- (a/{path_regex}|/dev/null)'),
-    "FILE_HEADER_END": re.compile(rf'\+\+\+ (b/{path_regex}|/dev/null)'),
+    "DIFF_LINE": re.compile(rf'^diff --git (a/{path_regex}) (b/{path_regex})$'),
+    "MODE_LINE": re.compile(r'^(new|deleted) file mode [0-7]{6}$'),
+    "INDEX_LINE": re.compile(r'^index [0-9a-f]{7,64}\.\.[0-9a-f]{7,64}(?: [0-7]{6})?$|^similarity index ([0-9]+)%$'),
+    "BINARY_LINE": re.compile(rf'^Binary files (a/{path_regex}|/dev/null) and (b/{path_regex}|/dev/null) differ$'),
+    "RENAME_FROM": re.compile(rf'^rename from ({path_regex})$'),
+    "RENAME_TO": re.compile(rf'^rename to ({path_regex})$'),
+    "FILE_HEADER_START": re.compile(rf'^--- (a/{path_regex}|/dev/null)$'),
+    "FILE_HEADER_END": re.compile(rf'^\+\+\+ (b/{path_regex}|/dev/null)$'),
     "HUNK_HEADER": re.compile(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$'),
-    "END_LINE": re.compile(r'\\ No newline at end of file')
+    "END_LINE": re.compile(r'^\\ No newline at end of file$'),
 }
 
 
@@ -60,6 +60,12 @@ class OutOfOrderHunk(HunkErrorBase):
                 f"\n{self.format_hunk_for_error()}"
                 f"==============================="
                 f"\nOccurs before previous hunk with header {self.prev_header}")
+
+
+class EmptyHunk(Exception):
+    # don't inherit from HunkErrorBase since this is a sentinel exception
+    # meant to catch the case where the very last hunk is empty
+    pass
 
 
 class BadCarriageReturn(ValueError):
@@ -145,19 +151,6 @@ def find_hunk_start(context_lines, original_lines, fuzzy=False):
         if all(equal_lines):
             return i
 
-    # try with more flexible whitespace matching
-    for i in range(len(original_lines) - len(ctx) + 1):
-        equal_lines = []
-        for j in range(len(ctx)):
-            orig_line = original_lines[i + j].strip()
-            ctx_line = ctx[j].strip()
-            # normalize whitespace: convert multiple spaces/tabs to single space
-            orig_normalized = ' '.join(orig_line.split())
-            ctx_normalized = ' '.join(ctx_line.split())
-            equal_lines.append(orig_normalized == ctx_normalized)
-        if all(equal_lines):
-            return i
-
     # if fuzzy matching is enabled and exact match failed, try fuzzy match
     if fuzzy:
         best_match_score = 0.0
@@ -226,9 +219,13 @@ def find_all_hunk_starts(hunk_lines, search_lines, fuzzy=False):
 def capture_hunk(current_hunk, original_lines, offset, last_hunk, old_header, fuzzy=False):
     """
     Try to locate the hunk's true position in the original file.
+
     If multiple possible matches exist, pick the one closest to the expected
     (possibly corrupted) line number derived from the old hunk header.
     """
+    if not current_hunk:
+        raise EmptyHunk
+
     # extract needed info from old header match groups
     expected_old_start = int(old_header[0]) if old_header else 0
     try:
@@ -236,11 +233,27 @@ def capture_hunk(current_hunk, original_lines, offset, last_hunk, old_header, fu
     except IndexError:
         hunk_context = ""
 
-    # compute line counts
-    old_count = sum(1 for l in current_hunk if l.startswith((' ', '-')))
-    new_count = sum(1 for l in current_hunk if l.startswith((' ', '+')))
+    # presence or absence of end line shouldn't affect line counts
+    if regexes["END_LINE"].match(current_hunk[-1]):
+        hunk_len = len(current_hunk) - 1
+    else:
+        hunk_len = len(current_hunk)
 
-    if old_count > 0:
+    # compute line counts
+    context_count = sum(1 for l in current_hunk if l.startswith(' '))
+    minus_count = sum(1 for l in current_hunk if l.startswith('-'))
+    plus_count = sum(1 for l in current_hunk if l.startswith('+'))
+
+    old_count = context_count + minus_count
+    new_count = context_count + plus_count
+
+    if minus_count == hunk_len:     # file deletion
+        old_start = 1
+        new_start = 0
+    elif plus_count == hunk_len:    # file creation
+        old_start = 0
+        new_start = 1
+    else:                           # file modification
         search_index = last_hunk
         search_lines = original_lines[search_index:]
 
@@ -260,8 +273,10 @@ def capture_hunk(current_hunk, original_lines, offset, last_hunk, old_header, fu
                 # pick first match if no expected line info
                 old_start = candidate_positions[0] + 1
         else:
-            # try from start of file as fallback
-            matches = find_all_hunk_starts(current_hunk, original_lines, fuzzy=fuzzy)
+            # try from start of file, excluding lines already searched
+            search_index += hunk_len
+            search_lines = original_lines[:search_index]
+            matches = find_all_hunk_starts(current_hunk, search_lines, fuzzy=fuzzy)
             if not matches:
                 raise MissingHunkError(current_hunk)
             if expected_old_start:
@@ -279,11 +294,6 @@ def capture_hunk(current_hunk, original_lines, offset, last_hunk, old_header, fu
             new_start = 0
         else:
             new_start = old_start + offset
-    else:
-        # old count of zero can only mean file creation, since adding lines to
-        # an existing file requires surrounding context lines without a +
-        old_start = 0
-        new_start = 1   # line numbers are 1-indexed in the real world
 
     offset += (new_count - old_count)
 
@@ -362,7 +372,6 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
     file_start_header = False
     file_end_header = False
     look_for_rename = False
-    similarity_index = None
     missing_index = False
     binary_file = False
     current_hunk_header = ()
@@ -437,15 +446,6 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
                 current_path = Path(current_file).absolute()
                 offset = 0
                 last_hunk = 0
-                if not Path.exists(current_path):
-                    # this is meant to handle cases where the source file
-                    # doesn't exist (e.g., when applying a patch that renames
-                    # a file created earlier in the same patch)
-                    # TODO: but really, does that ever happen???
-                    fixed_lines.append(normalize_line(line))
-                    look_for_rename = True
-                    file_loaded = False
-                    continue
                 if not current_path.is_file():
                     raise IsADirectoryError(f"Rename from header points to a directory, not a file: {current_file}")
                 if dir_mode or current_path == original_path:
@@ -462,7 +462,7 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
                         last_index = i - 2
                     else:
                         raise NotImplementedError("Missing `rename from` header not yet supported.")
-                if not look_for_rename:
+                if not file_loaded:
                     # if we're not looking for a rename but encounter "rename to",
                     # this indicates a malformed patch - log warning but continue
                     warnings.warn(
@@ -632,6 +632,8 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
             offset,
             last_hunk
         ) = capture_hunk(current_hunk, original_lines, offset, last_hunk, current_hunk_header, fuzzy=fuzzy)
+    except EmptyHunk:
+        return fixed_lines
     except (MissingHunkError, OutOfOrderHunk) as e:
         e.add_file(current_file)
         raise e
@@ -670,4 +672,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

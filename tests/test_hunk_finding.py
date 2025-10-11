@@ -22,23 +22,6 @@ class TestImprovedHunkFinding:
         expected = " \tcontext line 1\n-\tdeleted line\n \tcontext line 2\n"
         assert result == expected
 
-    def test_whitespace_tolerant_matching(self):
-        """Test that hunk finding tolerates whitespace differences."""
-        original_lines = [
-            "function    test()   {\n",  # multiple spaces
-            "\t\tvar   x  =   1;\n",  # mixed tabs and spaces
-            "\t}\n"
-        ]
-
-        context_lines = [
-            " function test() {\n",  # normalized spaces
-            " \tvar x = 1;\n",  # different whitespace
-            " }\n"
-        ]
-
-        result = find_hunk_start(context_lines, original_lines, fuzzy=False)
-        assert result == 0  # should find match at beginning
-
     def test_exact_match_prioritized(self):
         """Test that exact matches are found before whitespace-tolerant ones."""
         original_lines = [
