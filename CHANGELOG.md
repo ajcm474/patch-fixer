@@ -1,7 +1,7 @@
 ## Version 0.4.0
 - Fix all remaining integration test failures
   - Temporarily disable `myriadrf/LimeSDR-Mini` test due to unreasonable execution time
-  - Majorly overhaul of `find_hunk_start` and `capture_hunk` to
+  - Majorly overhaul `find_hunk_start` and `capture_hunk` to
     - Properly raise errors instead of returning 0 on failure
     - Disregard `\ No newline at end of file` within hunk
     - Look for the *correct* match, not just the first one
@@ -13,7 +13,6 @@
   - Fix misleading error messages (no longer shows addition lines)
   - Enhance error reporting with `format_hunk_for_error()` function
 - Improve hunk finding reliability with whitespace-tolerant exact matching
-- More robust exact matching that normalizes whitespace differences
 - Add unit tests for hunk finding
 - Fix `--add-newline` behavior to correctly replace "No newline at end of file" marker with actual newline
 - Fix final newline preservation logic to respect `add_newline` parameter
