@@ -63,6 +63,14 @@ def split_ab(match_groups):
     return a, b
 
 
+def read_file_raw(filepath):
+    """Read file into a string using UTF-8 encoding."""
+    if hasattr(filepath, "read"):  # file-like object
+        return filepath.read()
+    with open(filepath, "r", encoding="utf-8") as f:
+        return f.read()
+
+
 def read_file_with_fallback_encoding(file_path):
     """Read file with UTF-8, falling back to other encodings if needed."""
     encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']

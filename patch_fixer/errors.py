@@ -48,3 +48,7 @@ class EmptyHunk(Exception):
 
 class BadCarriageReturn(ValueError):
     pass
+
+
+class DiffNotFoundError(ValueError):
+    pass
