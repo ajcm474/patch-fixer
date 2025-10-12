@@ -642,9 +642,11 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
 
     # if original file didn't end with a newline, strip out the newline here,
     # unless user explicitly requested to add final newline
-    if (not add_newline and
-            ((original_lines and not original_lines[-1].endswith("\n")) or
-             (fixed_lines and len(original_lines) == 0))):
+    if (
+        not add_newline and
+        ((original_lines and not original_lines[-1].endswith("\n")) or
+         (fixed_lines and len(original_lines) == 0))
+    ):
         fixed_lines[-1] = fixed_lines[-1].rstrip("\n")
 
     return fixed_lines
