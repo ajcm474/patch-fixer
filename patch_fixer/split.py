@@ -16,7 +16,8 @@ Could share some functionality with refactored, modular version of fix_patch
 import re
 from typing import List, Tuple
 
-from .patch_fixer import match_line, normalize_line, split_ab
+from .regex import match_line
+from .utils import normalize_line, split_ab
 
 
 def get_file_path_from_diff(line: str) -> str:

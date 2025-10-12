@@ -1,130 +1,14 @@
 #!/usr/bin/env python3
 import os
 import re
-import sys
 import warnings
 from pathlib import Path
 
 from git import Repo
 
-path_regex = r'[^ \n\t]+(?: [^ \n\t]+)*'
-regexes = {
-    "DIFF_LINE": re.compile(rf'^diff --git (a/{path_regex}) (b/{path_regex})$'),
-    "MODE_LINE": re.compile(r'^(new|deleted) file mode [0-7]{6}$'),
-    "INDEX_LINE": re.compile(r'^index [0-9a-f]{7,64}\.\.[0-9a-f]{7,64}(?: [0-7]{6})?$|^similarity index ([0-9]+)%$'),
-    "BINARY_LINE": re.compile(rf'^Binary files (a/{path_regex}|/dev/null) and (b/{path_regex}|/dev/null) differ$'),
-    "RENAME_FROM": re.compile(rf'^rename from ({path_regex})$'),
-    "RENAME_TO": re.compile(rf'^rename to ({path_regex})$'),
-    "FILE_HEADER_START": re.compile(rf'^--- (a/{path_regex}|/dev/null)$'),
-    "FILE_HEADER_END": re.compile(rf'^\+\+\+ (b/{path_regex}|/dev/null)$'),
-    "HUNK_HEADER": re.compile(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$'),
-    "END_LINE": re.compile(r'^\\ No newline at end of file$'),
-}
-
-
-class HunkErrorBase(Exception):
-    def __init__(self, hunk_lines, file="(unknown file)"):
-        super().__init__()
-        self.hunk = "".join(hunk_lines)
-        self.file = file
-
-    def format_hunk_for_error(self):
-        """Format hunk for error messages, showing only context and deletion lines."""
-        error_lines = []
-        for line in self.hunk.splitlines(keepends=True):
-            if line.startswith((' ', '-')):  # context or deletion lines
-                error_lines.append(line)
-            # skip addition lines (+) as they shouldn't be in the original file
-        return ''.join(error_lines)
-
-    def add_file(self, file):
-        self.file = file
-
-
-class MissingHunkError(HunkErrorBase):
-    def __str__(self):
-        return (f"Could not find hunk in {self.file}:"
-                f"\n================================"
-                f"\n{self.format_hunk_for_error()}"
-                f"================================")
-
-
-class OutOfOrderHunk(HunkErrorBase):
-    def __init__(self, hunk_lines, prev_header, file="(unknown file)"):
-        super().__init__(hunk_lines, file)
-        self.prev_header = prev_header
-
-    def __str__(self):
-        return (f"Out of order hunk in {self.file}:"
-                f"\n==============================="
-                f"\n{self.format_hunk_for_error()}"
-                f"==============================="
-                f"\nOccurs before previous hunk with header {self.prev_header}")
-
-
-class EmptyHunk(Exception):
-    # don't inherit from HunkErrorBase since this is a sentinel exception
-    # meant to catch the case where the very last hunk is empty
-    pass
-
-
-class BadCarriageReturn(ValueError):
-    pass
-
-
-def normalize_line(line):
-    """Normalize line endings while preserving whitespace."""
-    if not isinstance(line, str):
-        raise TypeError(f"Cannot normalize non-string object {line}")
-
-    # edge case: empty string
-    if line == "":
-        return "\n"
-
-    # special malformed ending: ...\n\r
-    if line.endswith("\n\r"):
-        raise BadCarriageReturn(f"carriage return after line feed: {line}")
-
-    # handle CRLF and simple CR/LF endings
-    if line.endswith("\r\n"):
-        core = line[:-2]
-    elif line.endswith("\r"):
-        core = line[:-1]
-    elif line.endswith("\n"):
-        core = line[:-1]
-    else:
-        core = line
-
-    # check for interior CR/LF (anything before the final terminator)
-    if "\n" in core:
-        raise ValueError(f"line feed in middle of line: {line}")
-    if "\r" in core:
-        raise BadCarriageReturn(f"carriage return in middle of line: {line}")
-
-    return core + "\n"
-
-
-def fuzzy_line_similarity(line1, line2, threshold=0.8):
-    """Calculate similarity between two lines using a simple ratio."""
-    l1, l2 = line1.strip(), line2.strip()
-
-    # empty strings are identical
-    if len(l1) == 0 and len(l2) == 0:
-        return 1.0
-
-    if l1 == l2:
-        return 1.0
-
-    if len(l1) == 0 or len(l2) == 0:
-        return 0.0
-
-    # count common characters
-    common = 0
-    for char in set(l1) & set(l2):
-        common += min(l1.count(char), l2.count(char))
-
-    total_chars = len(l1) + len(l2)
-    return (2.0 * common) / total_chars if total_chars > 0 else 0.0
+from patch_fixer.errors import MissingHunkError, OutOfOrderHunk, EmptyHunk
+from patch_fixer.regex import regexes, match_line
+from patch_fixer.utils import normalize_line, fuzzy_line_similarity, split_ab, read_file_with_fallback_encoding
 
 
 def find_hunk_start(context_lines, original_lines, fuzzy=False):
@@ -171,21 +55,6 @@ def find_hunk_start(context_lines, original_lines, fuzzy=False):
             return best_match_pos
 
     raise MissingHunkError(context_lines)
-
-
-def match_line(line):
-    for line_type, regex in regexes.items():
-        match = regex.match(line)
-        if match:
-            return match.groups(), line_type
-    return None, None
-
-
-def split_ab(match_groups):
-    a, b = match_groups
-    a = f"./{a[2:]}"
-    b = f"./{b[2:]}"
-    return a, b
 
 
 def reconstruct_file_header(diff_line, header_type):
@@ -306,25 +175,6 @@ def capture_hunk(current_hunk, original_lines, offset, last_hunk, old_header, fu
     fixed_header = f"@@ -{old_part} +{new_part} @@{hunk_context}\n"
 
     return fixed_header, offset, last_hunk
-
-
-def read_file_with_fallback_encoding(file_path):
-    """Read file with UTF-8, falling back to other encodings if needed."""
-    encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
-
-    for encoding in encodings:
-        try:
-            with open(file_path, 'r', encoding=encoding) as f:
-                return f.readlines()
-        except UnicodeDecodeError:
-            continue
-
-    # If all encodings fail, read as binary and replace problematic characters
-    with open(file_path, 'rb') as f:
-        content = f.read()
-        # Decode with UTF-8, replacing errors
-        text_content = content.decode('utf-8', errors='replace')
-        return text_content.splitlines(keepends=True)
 
 
 def regenerate_index(old_path, new_path, cur_dir):

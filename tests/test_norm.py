@@ -1,7 +1,9 @@
 import pytest
 from hypothesis import given, strategies as st
 
-from patch_fixer.patch_fixer import normalize_line, BadCarriageReturn
+from patch_fixer.utils import normalize_line
+from patch_fixer.errors import BadCarriageReturn
+
 
 # --- Good cases --------------------------------------------------
 
