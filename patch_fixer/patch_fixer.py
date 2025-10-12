@@ -650,27 +650,3 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
         fixed_lines[-1] = fixed_lines[-1].rstrip("\n")
 
     return fixed_lines
-
-
-def main():
-    if len(sys.argv) != 4:
-        print(f"Usage: {sys.argv[0]} <original_file> <broken.patch> <fixed.patch>")
-        sys.exit(1)
-
-    original = sys.argv[1]
-    patch_file = sys.argv[2]
-    output_file = sys.argv[3]
-
-    with open(patch_file, encoding='utf-8') as f:
-        patch_lines = f.readlines()
-
-    fixed_lines = fix_patch(patch_lines, original)
-
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.writelines(fixed_lines)
-
-    print(f"Fixed patch written to {output_file}")
-
-
-if __name__ == "__main__":
-    main()
