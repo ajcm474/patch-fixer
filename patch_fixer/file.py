@@ -23,7 +23,7 @@ class PatchFile:
 
     def split_by_diff(self):
         self.diffs = [
-            Diff(raw_diff) for raw_diff in
+            Diff(raw_diff, **self.options) for raw_diff in
             re.split(
                 r'(?=^diff --git )',
                 self.content,

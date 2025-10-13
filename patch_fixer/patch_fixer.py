@@ -269,8 +269,7 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
                     # TODO: this is the right idea, but a poor implementation
                     pass
                 last_index = i
-                similarity_index = match_groups[0]
-                if similarity_index:
+                if "similarity" in index_line:
                     look_for_rename = True
                 fixed_lines.append(normalize_line(line))
                 missing_index = False
