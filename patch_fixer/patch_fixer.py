@@ -327,7 +327,7 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
                 if look_for_rename:
                     raise NotImplementedError("Replacing file header with rename not yet supported.")
                 if binary_file:
-                    raise NotImplementedError("A header block with both 'binary files differ' and "
+                    raise NotImplementedError("A header block with both 'Binary files differ' and "
                                               "file start/end headers is a confusing state"
                                               "\nfrom which there is no obvious way to recover.")
                 if last_index != i - 1:
@@ -369,7 +369,7 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
                 if look_for_rename:
                     raise NotImplementedError("Replacing file header with rename not yet supported.")
                 if binary_file:
-                    raise NotImplementedError("A header block with both 'binary files differ' and "
+                    raise NotImplementedError("A header block with both 'Binary files differ' and "
                                               "file start/end headers is a confusing state"
                                               "\nfrom which there is no obvious way to recover.")
                 dest_file = match_groups[0]
