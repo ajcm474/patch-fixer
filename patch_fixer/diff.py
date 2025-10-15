@@ -154,7 +154,9 @@ def parse_header(header, **kwargs):
                 rename_to = match_groups[0]
                 rename_to_path = Path(rename_to).absolute()
                 if rename_to and rename_to_path.is_dir():
-                    raise IsADirectoryError(f"rename to points to a directory, not a file: {rename_to}")
+                    raise IsADirectoryError(
+                        f"rename to points to a directory, not a file: {rename_to}"
+                    )
             case "FILE_HEADER_START":
                 current_file = match_groups[0]
                 if current_file == "/dev/null":
@@ -165,11 +167,17 @@ def parse_header(header, **kwargs):
                     fixed_line = fixed_line.replace(current_file, f"a/{current_file}")
                 current_path = Path(current_file).absolute()
                 if not current_path.exists():
-                    raise FileNotFoundError(f"File header start points to non-existent file: {current_file}")
+                    raise FileNotFoundError(
+                        f"File header start points to non-existent file: {current_file}"
+                    )
                 if not current_path.is_file():
-                    raise IsADirectoryError(f"File header start points to a directory, not a file: {current_file}")
+                    raise IsADirectoryError(
+                        f"File header start points to a directory, not a file: {current_file}"
+                    )
                 if not dir_mode and current_path != original_path:
-                    raise FileNotFoundError(f"Filename {current_file} in header does not match argument {original}")
+                    raise FileNotFoundError(
+                        f"Filename {current_file} in header does not match argument {original}"
+                    )
             case "FILE_HEADER_END":
                 dest_file = match_groups[0]
                 dest_path = Path(dest_file).absolute()
@@ -179,18 +187,26 @@ def parse_header(header, **kwargs):
                     fixed_line = fixed_line.replace(dest_file, f"b/{dest_file}")
                 if current_file == "/dev/null":
                     if dest_file == "/dev/null":
-                        raise ValueError("File headers cannot both be /dev/null")
+                        raise ValueError(
+                            "File headers cannot both be /dev/null"
+                        )
                     elif dest_path.exists():
-                        raise FileExistsError(f"File header start /dev/null implies file creation, "
-                                              f"but file header end would overwrite existing file: {dest_file}")
+                        raise FileExistsError(
+                            f"File header start /dev/null implies file creation, "
+                            f"but file header end would overwrite existing file: {dest_file}"
+                        )
                     current_file = dest_file
                     current_path = Path(current_file).absolute()
                     if not dir_mode and current_path != original_path:
-                        raise FileNotFoundError(f"Filename {current_file} in header does not match argument {original}")
+                        raise FileNotFoundError(
+                            f"Filename {current_file} in header does not match argument {original}"
+                        )
                 elif dest_file == "/dev/null":
                     current_path = Path(current_file).absolute()
                     if not current_path.exists():
-                        raise FileNotFoundError(f"The file being 'deleted' does not exist: {current_file}")
+                        raise FileNotFoundError(
+                            f"The file being 'deleted' does not exist: {current_file}"
+                        )
             case _:
                 warnings.warn(f"Unrecognized header line: {line}")
                 continue
