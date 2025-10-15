@@ -21,10 +21,12 @@ class HunkErrorBase(Exception):
 
 class MissingHunkError(HunkErrorBase):
     def __str__(self):
-        return (f"Could not find hunk in {self.file}:"
-                f"\n================================"
-                f"\n{self.format_hunk_for_error()}"
-                f"================================")
+        return (
+            f"Could not find hunk in {self.file}:"
+            f"\n================================"
+            f"\n{self.format_hunk_for_error()}"
+            f"================================"
+        )
 
 
 class OutOfOrderHunk(HunkErrorBase):
@@ -33,11 +35,13 @@ class OutOfOrderHunk(HunkErrorBase):
         self.prev_header = prev_header
 
     def __str__(self):
-        return (f"Out of order hunk in {self.file}:"
-                f"\n==============================="
-                f"\n{self.format_hunk_for_error()}"
-                f"==============================="
-                f"\nOccurs before previous hunk with header {self.prev_header}")
+        return (
+            f"Out of order hunk in {self.file}:"
+            f"\n==============================="
+            f"\n{self.format_hunk_for_error()}"
+            f"==============================="
+            f"\nOccurs before previous hunk with header {self.prev_header}"
+        )
 
 
 class EmptyHunk(Exception):
