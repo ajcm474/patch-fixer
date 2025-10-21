@@ -25,6 +25,7 @@ from git import Repo
 import pytest
 
 from patch_fixer import fix_patch
+from patch_fixer.file import PatchFile
 
 REPOS = {
     ("apache", "airflow"): ("26f6e54","2136f56"),   # big repo
@@ -150,7 +151,7 @@ def get_cached_diff(repo_group, repo_name, old_commit, new_commit):
 
     if diff_path.exists():
         with open(diff_path, 'r', encoding='utf-8') as f:
-            return f.read()
+            return f.read(), diff_path
 
     # generate diff and cache it
     (repo_old, repo_old_path, repo_new, repo_new_path) = clone_repos(repo_group, repo_name, old_commit, new_commit)
@@ -159,23 +160,42 @@ def get_cached_diff(repo_group, repo_name, old_commit, new_commit):
     with open(diff_path, 'w', encoding='utf-8') as f:
         f.write(diff_content)
 
-    return diff_content
+    return diff_content, diff_path
+
+
+# @pytest.mark.parametrize(
+#     "repo_group, repo_name, old_commit, new_commit",
+#     [(*repo, *commits) for repo, commits in REPOS.items()]
+# )
+# def test_integration_equality(repo_group, repo_name, old_commit, new_commit):
+#     """ Make sure the patch fixer doesn't corrupt valid diffs. """
+#     # use cached diff if available, otherwise generate and cache it
+#     expected, _ = get_cached_diff(repo_group, repo_name, old_commit, new_commit)
+#
+#     # we still need the old repo path for the patch fixer
+#     (repo_old, repo_old_path, _, _) = clone_repos(repo_group, repo_name, old_commit, new_commit)
+#
+#     input_lines = expected.splitlines(keepends=True)
+#     fixed_lines = fix_patch(input_lines, repo_old_path)
+#     actual = "".join(fixed_lines)
+#
+#     assert actual == expected
 
 
 @pytest.mark.parametrize(
     "repo_group, repo_name, old_commit, new_commit",
     [(*repo, *commits) for repo, commits in REPOS.items()]
 )
-def test_integration_equality(repo_group, repo_name, old_commit, new_commit):
+def test_integration_equality_oop(repo_group, repo_name, old_commit, new_commit):
     """ Make sure the patch fixer doesn't corrupt valid diffs. """
     # use cached diff if available, otherwise generate and cache it
-    expected = get_cached_diff(repo_group, repo_name, old_commit, new_commit)
+    expected, diff_path = get_cached_diff(repo_group, repo_name, old_commit, new_commit)
 
     # we still need the old repo path for the patch fixer
     (repo_old, repo_old_path, _, _) = clone_repos(repo_group, repo_name, old_commit, new_commit)
 
-    input_lines = expected.splitlines(keepends=True)
-    fixed_lines = fix_patch(input_lines, repo_old_path)
-    actual = "".join(fixed_lines)
+    patch = PatchFile(diff_path, repo_old_path, fuzzy=False)
+    patch.split_by_diff()
+    actual = patch.fixed_lines
 
     assert actual == expected

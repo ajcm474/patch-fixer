@@ -8,7 +8,7 @@ from requests import options
 from patch_fixer.hunk import Hunk
 from patch_fixer.regex import match_line, regexes
 from patch_fixer.patch_fixer import reconstruct_file_header, regenerate_index
-from patch_fixer.utils import normalize_line, split_ab
+from patch_fixer.utils import normalize_line, split_ab, read_file_with_fallback_encoding
 
 
 def validate_headers(headers, line_type_counts, current_file, dest_file, original_path, mode, similarity):
@@ -100,7 +100,7 @@ def validate_headers(headers, line_type_counts, current_file, dest_file, origina
         fixed_headers.append(headers["FILE_HEADER_START"])
         fixed_headers.append(headers["FILE_HEADER_END"])
 
-    return fixed_headers
+    return fixed_headers, new_file, deleted_file
 
 
 def parse_header(header, **kwargs):
@@ -109,32 +109,41 @@ def parse_header(header, **kwargs):
     original_path = Path(original).absolute()
 
     header_lines = [line for line in header.splitlines(keepends=True)]
-    headers = {line_type: False for line_type in regexes.keys()}
+    headers = {}
     line_type_counts = {line_type: 0 for line_type in regexes.keys()}
 
     rename_from, rename_to, current_file, dest_file = None, None, None, None
     original_lines = []
     mode = 0
     similarity = 0
+    current_path = None
+
+    # make relative paths in the diff work
+    if dir_mode:
+        os.chdir(original_path)
+    else:
+        os.chdir(original_path.parent)
 
     for i, line in enumerate(header_lines):
         match_groups, line_type = match_line(line)
         fixed_line = normalize_line(line)
         match line_type:
-            case "DIFF_LINE" | "BINARY_LINE" | "HUNK_HEADER" | "END_LINE":
+            case "DIFF_LINE" | "BINARY_LINE" | "END_LINE":
                 pass
+            case "HUNK_HEADER":
+                continue
             case "MODE_LINE":
                 mode = match_groups[0]
             case "INDEX_LINE":
                 if "similarity" in line:
-                    similarity = int(match_groups[0])
+                    similarity = int(match_groups[-1])
                 else:
                     old_index = match_groups[0]
                     new_index = match_groups[1]
-                    if len(match_groups) == 2:
-                        if mode and int(f"0x{new_index}") != 0:
+                    if len(match_groups) == 2 or match_groups[2] is None:
+                        if mode and int(f"0x{new_index}", 16) != 0:
                             # add missing mode
-                            fixed_line = f"{old_index}..{new_index} {mode}\n"
+                            fixed_line = f"index {old_index}..{new_index} {mode}\n"
                     elif mode and int(match_groups[2]) != mode:
                         raise ValueError(
                             f"mode line file mode {mode} does not match "
@@ -143,19 +152,19 @@ def parse_header(header, **kwargs):
                     elif not mode:
                         mode = match_groups[2]
             case "RENAME_FROM":
-                rename_from = match_groups[0]
-                rename_from_path = Path(rename_from).absolute()
-                if not dir_mode and rename_from_path != original_path:
+                current_file = match_groups[0]
+                current_path = Path(current_file).absolute()
+                if not dir_mode and current_path != original_path:
                     raise FileNotFoundError(
-                        f"Filename {rename_from} in `rename from` header "
+                        f"Filename {current_file} in `rename from` header "
                         f"does not match argument {original}"
                     )
             case "RENAME_TO":
-                rename_to = match_groups[0]
-                rename_to_path = Path(rename_to).absolute()
-                if rename_to and rename_to_path.is_dir():
+                dest_file = match_groups[0]
+                dest_path = Path(dest_file).absolute()
+                if dest_file and dest_path.is_dir():
                     raise IsADirectoryError(
-                        f"rename to points to a directory, not a file: {rename_to}"
+                        f"rename to points to a directory, not a file: {dest_file}"
                     )
             case "FILE_HEADER_START":
                 current_file = match_groups[0]
@@ -214,19 +223,31 @@ def parse_header(header, **kwargs):
         headers[line_type] = fixed_line
         line_type_counts[line_type] += 1
 
-    fixed_header = validate_headers(headers, line_type_counts, current_file, dest_file, original_path, mode, similarity)
+    fixed_header, new_file, deleted_file = validate_headers(headers, line_type_counts, current_file, dest_file, original_path, mode, similarity)
 
-    return fixed_header, original_lines
+    file_lines = read_file_with_fallback_encoding(current_path)
+    original_lines = [l.rstrip('\n') for l in file_lines]
+
+    return fixed_header, original_lines, new_file, deleted_file
 
 
 class Diff:
     def __init__(self, raw_content, **kwargs):
-        self.content = raw_content
         self.options = kwargs
 
-        parts = re.split(r'^@@ [0-9, +-] @@.*$', self.content, flags=re.MULTILINE)
-        self.header_lines, self.original_lines = parse_header(parts[0], **kwargs)
-        self.hunks = [Hunk(hunk) for hunk in parts[1:]]
+        parts = re.split(r'^@@ [0-9, +-] @@.*$', raw_content, flags=re.MULTILINE)
+        self.header_lines, self.original_lines, self.new_file, self.deleted_file = parse_header(parts[0], **kwargs)
+
+        offset, last_hunk = 0, 0
+        self.hunks = []
+        fuzzy = self.options["fuzzy"]
+        for hunk_raw in parts[1:]:
+            hunk = Hunk(hunk_raw, self, offset, last_hunk, fuzzy=fuzzy)
+            self.hunks.append("".join(hunk.lines))
+            offset = hunk.offset
+            last_hunk = hunk.last_hunk
+
+        self.content = "".join(self.hunks)
 
     def __str__(self):
         return self.content
