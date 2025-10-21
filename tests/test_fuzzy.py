@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import pytest
-from patch_fixer.patch_fixer import find_hunk_start
+from patch_fixer.hunk import find_hunk_start
 from patch_fixer.utils import fuzzy_line_similarity
 from patch_fixer.errors import MissingHunkError
 
