@@ -13,7 +13,7 @@ from patch_fixer.utils import normalize_line, split_ab, read_file_with_fallback_
 
 
 def reconstruct_file_header(diff_line, header_type):
-    # reconstruct file header based on last diff line
+    """ Reconstruct file header based on last diff line. """
     diff_groups, diff_type = match_line(diff_line)
     assert diff_type == "DIFF_LINE", "Indexing error in last diff calculation"
     a, b = diff_groups
