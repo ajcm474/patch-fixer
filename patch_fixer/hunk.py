@@ -157,7 +157,7 @@ def capture_hunk(current_hunk, original_lines, offset, last_hunk, old_header, fu
 
 
 class Hunk:
-    def __init__(self, content, diff, offset, last_hunk, fuzzy=False):
+    def __init__(self, content, diff, old_header, offset, last_hunk, fuzzy=False):
         self.diff = diff
 
         self.lines = [
@@ -167,9 +167,8 @@ class Hunk:
             raise EmptyHunk
 
         header_line = self.lines[0]
-        old_header, line_type = match_line(header_line)
 
-        if line_type != "HUNK_HEADER":
+        if old_header is None:
             # regex didn't work; construct fake old header as a placeholder
             context = header_line.split("@@")[-1].rstrip("\n")
             old_start = 0 if self.diff.new_file else 1

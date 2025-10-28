@@ -39,7 +39,7 @@ class PatchFile:
             raise DiffNotFoundError(
                 f"Patch file does not contain any diff blocks: {self.patch_path}"
             )
-        self.content = "".join(self.diffs)
+        self.fixed_lines = "".join("".join(diff) for diff in self.diffs)
 
     def split_by_line(self):
         patch_lines = self.content.splitlines(keepends=True)

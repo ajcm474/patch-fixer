@@ -1,9 +1,8 @@
+import copy
 import os
 import re
 import warnings
 from pathlib import Path
-
-from requests import options
 
 from patch_fixer.hunk import Hunk
 from patch_fixer.regex import match_line, regexes
@@ -12,24 +11,31 @@ from patch_fixer.utils import normalize_line, split_ab, read_file_with_fallback_
 
 
 def validate_headers(headers, line_type_counts, current_file, dest_file, original_path, mode, similarity):
+    headers = copy.deepcopy(headers)
+
     for line_type, count in line_type_counts.items():
-        if count > 1:
+        if count > 1 and not (count == 2 and line_type == "INDEX_LINE"):
             raise ValueError(f"Duplicate {line_type} header found")
 
     diff_line = headers["DIFF_LINE"]
     a, b = regexes["DIFF_LINE"].match(diff_line).groups()
-    look_for_rename = a != b
+    look_for_rename = a[2:] != b[2:]
 
     # set up convenience booleans
-    binary_file = "BINARY_FILE" in headers
+    binary_file = "BINARY_LINE" in headers
     mode_exists = "MODE_LINE" in headers
     index_exists = "INDEX_LINE" in headers
     from_exists = "RENAME_FROM" in headers
     to_exists = "RENAME_TO" in headers
     start_exists = "FILE_HEADER_START" in headers
     end_exists = "FILE_HEADER_END" in headers
-    new_file = current_file == "/dev/null"
-    deleted_file = dest_file == "/dev/null"
+
+    if mode_exists:
+        new_file = "new" in headers["MODE_LINE"]
+        deleted_file = "deleted" in headers["MODE_LINE"]
+    else:
+        new_file = current_file == "/dev/null"
+        deleted_file = dest_file == "/dev/null"
 
     # check for incompatible header combinations
     if binary_file and from_exists:
@@ -43,9 +49,9 @@ def validate_headers(headers, line_type_counts, current_file, dest_file, origina
 
     # fix rename and file headers
     if look_for_rename:
-        if to_exists and not from_exists:
+        if not from_exists:
             headers["RENAME_FROM"] = f"rename from {a}\n"
-        elif from_exists and not to_exists:
+        if not to_exists:
             headers["RENAME_TO"] = f"rename to {b}\n"
     else:
         if current_file != dest_file and not (new_file or deleted_file):
@@ -78,15 +84,19 @@ def validate_headers(headers, line_type_counts, current_file, dest_file, origina
     elif deleted_file:
         fixed_headers.append(f"deleted file mode {mode}")
 
-    # rename comes before index if both are present (renamed file with changes)
+    if similarity:
+        # TODO: track similarity line separately
+        fixed_headers.append(f"similarity index {similarity}%\n")
+
     if look_for_rename:
         fixed_headers.append(headers["RENAME_FROM"])
         fixed_headers.append(headers["RENAME_TO"])
 
-    if index_exists:
-        fixed_headers.append(headers["INDEX_LINE"])
-    else:
-        fixed_headers.append(regenerate_index(current_file, dest_file, original_path))
+    if not similarity:
+        if index_exists:
+            fixed_headers.append(headers["INDEX_LINE"])
+        else:
+            fixed_headers.append(regenerate_index(current_file, dest_file, original_path))
 
     if binary_file:
         binary_line = headers["BINARY_LINE"]
@@ -113,10 +123,10 @@ def parse_header(header, **kwargs):
     line_type_counts = {line_type: 0 for line_type in regexes.keys()}
 
     rename_from, rename_to, current_file, dest_file = None, None, None, None
-    original_lines = []
     mode = 0
     similarity = 0
     current_path = None
+    binary_file = False
 
     # make relative paths in the diff work
     if dir_mode:
@@ -128,8 +138,10 @@ def parse_header(header, **kwargs):
         match_groups, line_type = match_line(line)
         fixed_line = normalize_line(line)
         match line_type:
-            case "DIFF_LINE" | "BINARY_LINE" | "END_LINE":
+            case "DIFF_LINE" | "END_LINE":
                 pass
+            case "BINARY_LINE":
+                binary_file = True
             case "HUNK_HEADER":
                 continue
             case "MODE_LINE":
@@ -143,7 +155,8 @@ def parse_header(header, **kwargs):
                     if len(match_groups) == 2 or match_groups[2] is None:
                         if mode and int(f"0x{new_index}", 16) != 0:
                             # add missing mode
-                            fixed_line = f"index {old_index}..{new_index} {mode}\n"
+                            pass
+                            # fixed_line = f"index {old_index}..{new_index} {mode}\n"
                     elif mode and int(match_groups[2]) != mode:
                         raise ValueError(
                             f"mode line file mode {mode} does not match "
@@ -225,8 +238,11 @@ def parse_header(header, **kwargs):
 
     fixed_header, new_file, deleted_file = validate_headers(headers, line_type_counts, current_file, dest_file, original_path, mode, similarity)
 
-    file_lines = read_file_with_fallback_encoding(current_path)
-    original_lines = [l.rstrip('\n') for l in file_lines]
+    if new_file or binary_file:
+        original_lines = []
+    else:
+        file_lines = read_file_with_fallback_encoding(current_path)
+        original_lines = [l.rstrip('\n') for l in file_lines]
 
     return fixed_header, original_lines, new_file, deleted_file
 
@@ -235,19 +251,21 @@ class Diff:
     def __init__(self, raw_content, **kwargs):
         self.options = kwargs
 
-        parts = re.split(r'^@@ [0-9, +-] @@.*$', raw_content, flags=re.MULTILINE)
+        parts = re.split(r'^@@ [0-9, +-]+ @@.*$', raw_content, flags=re.MULTILINE)
+        old_headers = re.findall(regexes["HUNK_HEADER"].pattern, raw_content, flags=re.MULTILINE)
         self.header_lines, self.original_lines, self.new_file, self.deleted_file = parse_header(parts[0], **kwargs)
 
         offset, last_hunk = 0, 0
         self.hunks = []
         fuzzy = self.options["fuzzy"]
-        for hunk_raw in parts[1:]:
-            hunk = Hunk(hunk_raw, self, offset, last_hunk, fuzzy=fuzzy)
+        for hunk_index, hunk_content in enumerate(parts[1:]):
+            old_header = old_headers[hunk_index]
+            hunk = Hunk(hunk_content, self, old_header, offset, last_hunk, fuzzy=fuzzy)
             self.hunks.append("".join(hunk.lines))
             offset = hunk.offset
             last_hunk = hunk.last_hunk
 
-        self.content = "".join(self.hunks)
+        self.content = self.header_lines + "".join(self.hunks).splitlines(keepends=True)
 
     def __str__(self):
         return self.content
