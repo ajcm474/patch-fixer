@@ -1,3 +1,20 @@
+## Version 0.5.1
+- Improve maintainability of core patch fixing logic
+  - Refactor ~400 line `fix_patch` to modular functions of <100 lines each
+  - Separate concerns into PatchState class and handler functions
+  - Use helper functions from validators and transformers modules
+- Improve regular expressions:
+  - Separate `INDEX_LINE` and `SIMILARITY_LINE` into distinct patterns
+  - `INDEX_LINE` now captures hashes and mode for future use
+  - `MODE_LINE` now captures operation type and mode value
+- Improve code style:
+  - Convert all docstrings to numpy style
+  - Update comments to start with lowercase letters
+  - Replace manual a/ b/ prefix removal with split_ab utility
+- Fix outstanding bugs:
+  - Fix END_LINE handling with add_newline option
+  - Fix path handling after chdir in directory mode
+
 ## Version 0.5.0
 - Major refactoring for better code organization (functional approach)
   - Add `validators.py` module with pure validation functions

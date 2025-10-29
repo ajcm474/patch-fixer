@@ -5,17 +5,27 @@ from typing import Tuple, Optional, Dict, Any
 
 from .regex import match_line, regexes
 from .errors import InvalidPatchError
+from .utils import split_ab
 
 
 def validate_hunk_header(header_line: str) -> Tuple[int, int, int, int, str]:
     """
     Validate and parse hunk header.
 
-    Returns:
-        Tuple of (old_start, old_count, new_start, new_count, context)
+    Parameters
+    ----------
+    header_line : str
+        The hunk header line to parse
 
-    Raises:
-        InvalidPatchError: If header is malformed
+    Returns
+    -------
+    tuple
+        (old_start, old_count, new_start, new_count, context)
+
+    Raises
+    ------
+    InvalidPatchError
+        If header is malformed
     """
     match_groups, line_type = match_line(header_line)
     if line_type != "HUNK_HEADER":
@@ -34,20 +44,28 @@ def validate_diff_header(diff_line: str) -> Tuple[str, str]:
     """
     Validate and parse diff header.
 
-    Returns:
-        Tuple of (source_file, dest_file)
+    Parameters
+    ----------
+    diff_line : str
+        The diff header line to parse
 
-    Raises:
-        InvalidPatchError: If header is malformed
+    Returns
+    -------
+    tuple
+        (source_file, dest_file) with prefixes removed
+
+    Raises
+    ------
+    InvalidPatchError
+        If header is malformed
     """
     match_groups, line_type = match_line(diff_line)
     if line_type != "DIFF_LINE":
         raise InvalidPatchError(f"Invalid diff header: {diff_line}")
 
-    source = match_groups[0]
-    dest = match_groups[1]
+    source, dest = match_groups
 
-    # strip a/ and b/ prefixes if present
+    # remove a/ and b/ prefixes
     if source.startswith("a/"):
         source = source[2:]
     if dest.startswith("b/"):
@@ -60,11 +78,22 @@ def validate_file_header(header_line: str, header_type: str) -> str:
     """
     Validate file header (--- or +++ line).
 
-    Returns:
+    Parameters
+    ----------
+    header_line : str
+        The file header line to parse
+    header_type : str
+        Either "start" for --- lines or "end" for +++ lines
+
+    Returns
+    -------
+    str
         The file path from the header
 
-    Raises:
-        InvalidPatchError: If header is malformed
+    Raises
+    ------
+    InvalidPatchError
+        If header is malformed
     """
     match_groups, line_type = match_line(header_line)
 
@@ -79,9 +108,11 @@ def validate_file_header(header_line: str, header_type: str) -> str:
     if file_path in ("/dev/null", "nul"):
         return file_path
 
-    # strip a/ or b/ prefix if present
-    if file_path.startswith(("a/", "b/")):
-        file_path = file_path[2:]
+    # remove a/ or b/ prefix
+    if file_path.startswith("a/"):
+        return file_path[2:]
+    elif file_path.startswith("b/"):
+        return file_path[2:]
 
     return file_path
 
@@ -90,69 +121,103 @@ def validate_index_line(index_line: str) -> Dict[str, Any]:
     """
     Validate and parse index line.
 
-    Returns:
-        Dict with 'old_hash', 'new_hash', 'mode', and 'similarity' keys
+    Parameters
+    ----------
+    index_line : str
+        The index line to parse
 
-    Raises:
-        InvalidPatchError: If line is malformed
+    Returns
+    -------
+    dict
+        Dict with 'old_hash', 'new_hash', and 'mode' keys
+
+    Raises
+    ------
+    InvalidPatchError
+        If line is malformed
     """
     match_groups, line_type = match_line(index_line)
     if line_type != "INDEX_LINE":
         raise InvalidPatchError(f"Invalid index line: {index_line}")
 
-    result = {
-        'old_hash': None,
-        'new_hash': None,
-        'mode': None,
-        'similarity': None
+    return {
+        'old_hash': match_groups[0],
+        'new_hash': match_groups[1],
+        'mode': match_groups[2] if len(match_groups) > 2 else None
     }
 
-    # check if this is a similarity line
-    if "similarity index" in index_line:
-        # the regex captures the similarity percentage in group 0
-        if match_groups and match_groups[0]:
-            result['similarity'] = int(match_groups[0])
-    else:
-        # regular index line - parse manually since regex doesn't capture
-        index_match = re.match(r'^index ([0-9a-f]{7,64})\.\.([0-9a-f]{7,64})(?: ([0-7]{6}))?$', index_line)
-        if index_match:
-            result['old_hash'] = index_match.group(1)
-            result['new_hash'] = index_match.group(2)
-            if index_match.group(3):
-                result['mode'] = index_match.group(3)
 
-    return result
+def validate_similarity_line(similarity_line: str) -> int:
+    """
+    Validate and parse similarity index line.
+
+    Parameters
+    ----------
+    similarity_line : str
+        The similarity line to parse
+
+    Returns
+    -------
+    int
+        The similarity percentage
+
+    Raises
+    ------
+    InvalidPatchError
+        If line is malformed
+    """
+    match_groups, line_type = match_line(similarity_line)
+    if line_type != "SIMILARITY_LINE":
+        raise InvalidPatchError(f"Invalid similarity line: {similarity_line}")
+
+    return int(match_groups[0])
 
 
 def validate_mode_line(mode_line: str) -> Tuple[str, str]:
     """
     Validate and parse mode line.
 
-    Returns:
-        Tuple of (operation, mode) where operation is 'new', 'deleted', or 'mode'
+    Parameters
+    ----------
+    mode_line : str
+        The mode line to parse
 
-    Raises:
-        InvalidPatchError: If line is malformed
+    Returns
+    -------
+    tuple
+        (operation, mode) where operation is 'new', 'deleted', or 'mode'
+
+    Raises
+    ------
+    InvalidPatchError
+        If line is malformed
     """
     match_groups, line_type = match_line(mode_line)
     if line_type != "MODE_LINE":
         raise InvalidPatchError(f"Invalid mode line: {mode_line}")
 
-    # extract the mode number manually
-    mode_match = re.search(r'mode ([0-7]{6})', mode_line)
-    mode = mode_match.group(1) if mode_match else "100644"
+    # now the regex captures both operation and mode
+    operation = match_groups[0]
+    mode = match_groups[1] if match_groups[1] else "100644"
 
-    if "new file mode" in mode_line:
-        return "new", mode
-    elif "deleted file mode" in mode_line:
-        return "deleted", mode
-    else:
-        raise InvalidPatchError(f"Unrecognized mode line: {mode_line}")
+    return operation, mode
 
 
 def is_binary_diff(patch_lines: list) -> bool:
-    """Check if a patch represents a binary file diff."""
-    for line in patch_lines[:20]:  # Check first 20 lines
+    """
+    Check if a patch represents a binary file diff.
+
+    Parameters
+    ----------
+    patch_lines : list
+        Lines from the patch
+
+    Returns
+    -------
+    bool
+        True if this is a binary diff
+    """
+    for line in patch_lines[:20]:  # check first 20 lines
         if "Binary files" in line or "binary patch" in line.lower():
             return True
     return False
@@ -162,8 +227,15 @@ def count_hunk_lines(hunk_lines: list) -> Tuple[int, int, int]:
     """
     Count the number of added, removed, and context lines in a hunk.
 
-    Returns:
-        Tuple of (added_count, removed_count, context_count)
+    Parameters
+    ----------
+    hunk_lines : list
+        Lines from the hunk (excluding header)
+
+    Returns
+    -------
+    tuple
+        (added_count, removed_count, context_count)
     """
     added = 0
     removed = 0

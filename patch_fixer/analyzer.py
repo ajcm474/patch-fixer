@@ -1,8 +1,8 @@
 """Read-only patch analysis utilities."""
 
+import re
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Any
-import re
 
 from .regex import match_line
 from .validators import count_hunk_lines, is_binary_diff
@@ -102,15 +102,17 @@ def analyze_patch(patch_lines: List[str], strict: bool = False) -> PatchInfo:
             current_hunks = []
 
         elif line_type == "MODE_LINE" and current_file:
-            # extract mode from the line
-            mode_match = re.search(r'mode ([0-7]{6})', line)
-            mode = mode_match.group(1) if mode_match else "100644"
-            current_file.mode = mode
+            # the regex now captures the mode
+            current_file.mode = match_groups[1] if match_groups[1] else "100644"
 
-            if "new file mode" in line:
+            if match_groups[0] == "new":
                 current_file.is_new = True
-            elif "deleted file mode" in line:
+            elif match_groups[0] == "deleted":
                 current_file.is_deleted = True
+
+        elif line_type == "SIMILARITY_LINE" and current_file:
+            # handle similarity index for renames
+            pass
 
         elif line_type == "BINARY_LINE" and current_file:
             current_file.is_binary = True

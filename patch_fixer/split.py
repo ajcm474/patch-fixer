@@ -28,7 +28,9 @@ def get_file_path_from_diff(line: str) -> str:
 
     # get the 'a' path (source file)
     a_path, _ = split_ab(match_groups)
-    return a_path
+
+    # add ./ prefix for consistency with file list format
+    return f"./{a_path}"
 
 
 def split_patch(patch_lines: List[str], files_to_include: List[str]) -> Tuple[List[str], List[str]]:

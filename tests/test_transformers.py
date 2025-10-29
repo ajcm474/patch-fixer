@@ -4,7 +4,6 @@ import pytest
 from patch_fixer.transformers import (
     fix_hunk_header,
     fix_file_paths,
-    normalize_line_endings,
     add_final_newlines,
     fix_malformed_headers,
     split_patch_by_file
@@ -69,22 +68,6 @@ class TestTransformers:
 
         fixed = fix_file_paths(headers)
         assert fixed[1] == "--- /dev/null\n"  # Should not add prefix
-
-    def test_normalize_line_endings(self):
-        """Test normalizing mixed line endings."""
-        lines = [
-            "line 1\r\n",   # windows
-            "line 2\n",     # unix
-            "line 3\r",     # mac os9
-            "line 4"        # no ending
-        ]
-
-        normalized = normalize_line_endings(lines)
-        assert all(line.endswith('\n') or line == "line 4" for line in normalized)
-        assert normalized[0] == "line 1\n"
-        assert normalized[1] == "line 2\n"
-        assert normalized[2] == "line 3\n"
-        assert normalized[3] == "line 4\n"
 
     def test_add_final_newlines(self):
         """Test handling 'No newline at end of file' markers."""

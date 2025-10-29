@@ -57,9 +57,26 @@ def fuzzy_line_similarity(line1, line2, threshold=0.8):
 
 
 def split_ab(match_groups):
+    """
+    Split a/ and b/ prefixes from diff paths.
+
+    Parameters
+    ----------
+    match_groups : tuple
+        Match groups containing paths with a/ and b/ prefixes
+
+    Returns
+    -------
+    tuple
+        Paths without prefixes
+    """
     a, b = match_groups
-    a = f"./{a[2:]}"
-    b = f"./{b[2:]}"
+
+    if a.startswith("a/"):
+        a = a[2:]
+    if b.startswith("b/"):
+        b = b[2:]
+
     return a, b
 
 

@@ -6,6 +6,7 @@ from typing import List, Tuple, Optional
 from .validators import validate_hunk_header, count_hunk_lines
 from .hunk import find_hunk_start
 from .errors import MissingHunkError, OutOfOrderHunk
+from .utils import split_ab
 
 
 def fix_hunk_header(
@@ -18,15 +19,23 @@ def fix_hunk_header(
     """
     Fix line numbers in hunk header based on actual file content.
 
-    Args:
-        hunk_lines: Lines of the hunk including header
-        original_lines: Lines from the original file
-        offset: Current line number offset from previous hunks
-        last_hunk_pos: Position where the last hunk ended
-        fuzzy: Whether to use fuzzy matching
+    Parameters
+    ----------
+    hunk_lines : List[str]
+        Lines of the hunk including header
+    original_lines : List[str]
+        Lines from the original file
+    offset : int, optional
+        Current line number offset from previous hunks
+    last_hunk_pos : int, optional
+        Position where the last hunk ended
+    fuzzy : bool, optional
+        Whether to use fuzzy matching
 
-    Returns:
-        Tuple of (fixed_header, new_offset, new_last_hunk_pos)
+    Returns
+    -------
+    tuple
+        (fixed_header, new_offset, new_last_hunk_pos)
     """
     if not hunk_lines:
         raise ValueError("Empty hunk")
@@ -94,6 +103,16 @@ def fix_file_paths(header_lines: List[str]) -> List[str]:
     Normalize file paths in patch headers.
 
     Ensures consistent a/ and b/ prefixes and handles special cases.
+
+    Parameters
+    ----------
+    header_lines : List[str]
+        Header lines from a patch
+
+    Returns
+    -------
+    List[str]
+        Header lines with normalized paths
     """
     fixed = []
 
@@ -142,26 +161,22 @@ def fix_file_paths(header_lines: List[str]) -> List[str]:
     return fixed
 
 
-def normalize_line_endings(lines: List[str]) -> List[str]:
-    """Ensure all lines have consistent line endings."""
-    normalized = []
-    for line in lines:
-        # remove any existing line ending
-        clean = line.rstrip('\r\n')
-        # add Unix line ending
-        if clean or line.endswith(('\n', '\r\n', '\r')):
-            normalized.append(clean + '\n')
-        else:
-            normalized.append(clean)
-    return normalized
-
-
 def add_final_newlines(patch_lines: List[str]) -> List[str]:
     """
     Process 'No newline at end of file' markers correctly.
 
     Ensures that when such markers are present, the preceding line
     doesn't have a newline character.
+
+    Parameters
+    ----------
+    patch_lines : List[str]
+        Lines from the patch
+
+    Returns
+    -------
+    List[str]
+        Patch lines with corrected newlines
     """
     fixed = []
     i = 0
@@ -190,6 +205,16 @@ def fix_malformed_headers(patch_lines: List[str]) -> List[str]:
     - Missing diff headers
     - Incorrect file path formats
     - Missing index lines
+
+    Parameters
+    ----------
+    patch_lines : List[str]
+        Lines from the patch
+
+    Returns
+    -------
+    List[str]
+        Patch lines with fixed headers
     """
     fixed = []
     in_diff = False
@@ -233,7 +258,14 @@ def split_patch_by_file(patch_lines: List[str]) -> List[Tuple[str, List[str]]]:
     """
     Split a patch into individual file patches.
 
-    Returns:
+    Parameters
+    ----------
+    patch_lines : List[str]
+        Lines from a multi-file patch
+
+    Returns
+    -------
+    List[Tuple[str, List[str]]]
         List of tuples (filename, patch_lines_for_file)
     """
     files = []

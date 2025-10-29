@@ -88,14 +88,13 @@ class TestValidators:
         assert result['old_hash'] == "1234567"
         assert result['new_hash'] == "abcdef0"
         assert result['mode'] == "100644"
-        assert result['similarity'] is None
 
-    def test_validate_index_line_similarity(self):
+    def test_validate_similarity_line(self):
         """Test parsing similarity index lines."""
+        from patch_fixer.validators import validate_similarity_line
         line = "similarity index 95%\n"
-        result = validate_index_line(line)
-        assert result['similarity'] == 95
-        assert result['old_hash'] is None
+        similarity = validate_similarity_line(line)
+        assert similarity == 95
 
     def test_validate_mode_line_new(self):
         """Test parsing new file mode lines."""
