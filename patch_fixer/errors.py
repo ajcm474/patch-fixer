@@ -52,3 +52,8 @@ class EmptyHunk(Exception):
 
 class BadCarriageReturn(ValueError):
     pass
+
+
+class InvalidPatchError(ValueError):
+    """Raised when a patch component is malformed beyond repair."""
+    pass

@@ -49,7 +49,27 @@ def regenerate_index(old_path, new_path, cur_dir):
     return f"index {old_sha}..{new_sha}{mode}\n"
 
 
-def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newline=False):
+def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newline=False,
+              strict=False, pre_hunk_hook=None, post_hunk_hook=None):
+    """
+    Fix a potentially malformed patch to make it applicable.
+
+    Args:
+        patch_lines: List of lines from the patch file
+        original: Path to the original file or directory being patched
+        remove_binary: If True, skip binary file patches (not implemented)
+        fuzzy: If True, use fuzzy matching for finding hunks
+        add_newline: If True, add final newlines when processing "No newline at end of file" markers
+        strict: If True, fail fast on serious issues instead of trying to fix
+        pre_hunk_hook: Optional function called before processing each hunk
+        post_hunk_hook: Optional function called after processing each hunk
+
+    Returns:
+        List of fixed patch lines
+
+    Raises:
+        Various exceptions when strict=True and issues are found
+    """
     dir_mode = os.path.isdir(original)
     original_path = Path(original).absolute()
 
@@ -346,6 +366,16 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
                     current_hunk_header = match_groups
                     continue
 
+                # apply pre-hunk hook if provided
+                if pre_hunk_hook:
+                    hook_context = {
+                        'current_file': current_file,
+                        'original_lines': original_lines,
+                        'offset': offset,
+                        'last_hunk': last_hunk
+                    }
+                    current_hunk = pre_hunk_hook(current_hunk, hook_context)
+
                 try:
                     (
                         fixed_header,
@@ -355,6 +385,17 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
                 except (MissingHunkError, OutOfOrderHunk) as e:
                     e.add_file(current_file)
                     raise e
+
+                # apply post-hunk hook if provided
+                if post_hunk_hook:
+                    hook_context = {
+                        'current_file': current_file,
+                        'fixed_header': fixed_header,
+                        'offset': offset,
+                        'last_hunk': last_hunk
+                    }
+                    current_hunk = post_hunk_hook(current_hunk, hook_context)
+
                 fixed_lines.append(fixed_header)
                 fixed_lines.extend(current_hunk)
                 current_hunk = []

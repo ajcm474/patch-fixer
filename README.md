@@ -90,6 +90,38 @@ with open("excluded.patch", 'w', encoding='utf-8') as f:
     f.writelines(excluded)
 ```
 
+## Advanced Features
+
+### Patch Analysis
+
+Analyze patches without modifying them:
+
+```python
+from patch_fixer.analyzer import analyze_patch, get_patch_summary
+
+with open("patch.diff") as f:
+    lines = f.readlines()
+
+# Get detailed information
+info = analyze_patch(lines)
+print(f"Files: {info.total_files}, Added: {info.total_additions}, Removed: {info.total_deletions}")
+
+# Get human-readable summary
+print(get_patch_summary(lines))
+```
+
+### Custom Processing Hooks
+
+Add custom logic to patch processing:
+
+```python
+def log_hunks(hunk_lines, context):
+    print(f"Processing hunk in {context['current_file']}")
+    return hunk_lines
+
+fixed = fix_patch(patch_lines, original, pre_hunk_hook=log_hunks)
+```
+
 ## Known Limitations
 
 - When fixing patches with missing `index` lines, the tool requires the files to be in a git repository to regenerate the index. This is only needed for file deletions and renames.

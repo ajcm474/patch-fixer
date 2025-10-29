@@ -1,3 +1,24 @@
+## Version 0.5.0
+- Major refactoring for better code organization (functional approach)
+  - Add `validators.py` module with pure validation functions
+  - Add `transformers.py` module with pure transformation functions
+  - Add `analyzer.py` module for read-only patch analysis
+  - Maintain backward compatibility with existing API
+- Add support for processing hooks in `fix_patch`:
+  - `pre_hunk_hook` and `post_hunk_hook` for custom processing
+  - `strict` mode for fail-fast behavior (not implemented)
+- Add comprehensive patch analysis functionality:
+  - `analyze_patch()` for detailed patch information
+  - `find_potential_issues()` for detecting common problems
+  - `get_patch_summary()` for human-readable summaries
+- Add new transformation utilities:
+  - `fix_file_paths()` for normalizing path prefixes
+  - `normalize_line_endings()` for consistent line endings
+  - `split_patch_by_file()` for dividing multi-file patches
+- Add extensive test coverage for new modules
+- Abandon OOP branch after determining functional approach is better suited
+  for patch processing problems
+
 ## Version 0.4.1
 - Achieve 4x speedup by removing whitespace-tolerant exact matching
   - None of the integration tests needed this
