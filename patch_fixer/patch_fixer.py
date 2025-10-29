@@ -1,26 +1,13 @@
 #!/usr/bin/env python3
 import os
-import re
 import warnings
 from pathlib import Path
-
-from git import Repo
 
 from patch_fixer.errors import MissingHunkError, OutOfOrderHunk, EmptyHunk
 from patch_fixer.hunk import capture_hunk
 from patch_fixer.regex import match_line
 from patch_fixer.utils import normalize_line, split_ab, read_file_with_fallback_encoding
-from patch_fixer.patch_processor import (
-    process_diff_line,
-    process_mode_line,
-    process_index_line,
-    process_similarity_line,
-    process_rename_from,
-    process_rename_to,
-    reconstruct_file_header,
-    regenerate_index,
-    load_original_file
-)
+from patch_fixer.patch_processor import reconstruct_file_header, regenerate_index
 
 
 class PatchState:
@@ -89,8 +76,9 @@ def handle_mode_line(state, line, i):
 
 def handle_index_line(state, line, match_groups, i):
     """Process an INDEX_LINE."""
-    # check if mode is missing
     index_line = normalize_line(line).strip()
+
+    # check if mode is missing
     if not index_line.endswith("..0000000") and ' ' not in index_line.split('..')[-1]:
         # TODO: add mode if missing
         pass
@@ -120,7 +108,10 @@ def handle_binary_line(state, line, remove_binary):
 def handle_rename_from(state, line, match_groups, i, dir_mode, original_path, original):
     """Process a RENAME_FROM line."""
     if not state.look_for_rename:
-        warnings.warn(f"Warning: 'rename from' found without expected index line at line {i + 1}")
+        warnings.warn(
+            f"Warning: 'rename from' found without "
+            f"expected index line at line {i + 1}"
+        )
 
     if state.binary_file:
         raise NotImplementedError("Renaming binary files not yet supported")
@@ -137,7 +128,10 @@ def handle_rename_from(state, line, match_groups, i, dir_mode, original_path, or
     state.last_hunk = 0
 
     if not current_path.is_file():
-        raise IsADirectoryError(f"Rename from header points to a directory, not a file: {state.current_file}")
+        raise IsADirectoryError(
+            f"Rename from header points to a directory, "
+            f"not a file: {state.current_file}"
+        )
 
     if dir_mode or current_path == original_path:
         file_lines = read_file_with_fallback_encoding(current_path)
@@ -146,7 +140,9 @@ def handle_rename_from(state, line, match_groups, i, dir_mode, original_path, or
         state.file_loaded = True
     else:
         raise FileNotFoundError(
-            f"Filename {state.current_file} in `rename from` header does not match argument {original}")
+            f"Filename {state.current_file} in `rename from` header "
+            f"does not match argument {original}"
+        )
 
 
 def handle_rename_to(state, line, match_groups, i):
@@ -156,16 +152,24 @@ def handle_rename_to(state, line, match_groups, i):
             state.missing_index = False
             state.last_index = i - 2
         else:
-            raise NotImplementedError("Missing `rename from` header not yet supported.")
+            raise NotImplementedError(
+                "Missing `rename from` header not yet supported."
+            )
 
     if not state.file_loaded:
-        warnings.warn(f"Warning: unexpected 'rename to' found at line {i + 1} without corresponding 'rename from'")
+        warnings.warn(
+            f"Warning: unexpected 'rename to' found at line {i + 1} "
+            f"without corresponding 'rename from'"
+        )
 
     state.current_file = match_groups[0]
     current_path = Path(state.current_file).absolute()
 
     if state.current_file and current_path.is_dir():
-        raise IsADirectoryError(f"rename to points to a directory, not a file: {state.current_file}")
+        raise IsADirectoryError(
+            f"rename to points to a directory, "
+            f"not a file: {state.current_file}"
+        )
 
     state.fixed_lines.append(normalize_line(line))
     state.look_for_rename = False
@@ -174,11 +178,16 @@ def handle_rename_to(state, line, match_groups, i):
 def handle_file_header_start(state, line, match_groups, i, patch_lines, dir_mode, original_path, original):
     """Process a FILE_HEADER_START (---) line."""
     if state.look_for_rename:
-        raise NotImplementedError("Replacing file header with rename not yet supported.")
+        raise NotImplementedError(
+            "Replacing file header with rename not yet supported."
+        )
 
     if state.binary_file:
         raise NotImplementedError(
-            "A header block with both 'Binary files differ' and file start/end headers is a confusing state")
+            "A header block with both 'Binary files differ' "
+            "and file start/end headers is a confusing state "
+            "from which there is no obvious way to recover."
+        )
 
     state.current_file = match_groups[0]
     if state.current_file == "/dev/null":
@@ -205,17 +214,25 @@ def handle_file_header_start(state, line, match_groups, i, patch_lines, dir_mode
                 state.original_lines = []
                 state.file_loaded = True
                 return
-        raise FileNotFoundError(f"File header start points to non-existent file: {state.current_file}")
+        raise FileNotFoundError(
+            f"File header start points to non-existent file: {state.current_file}"
+        )
 
     if not current_path.is_file():
-        raise IsADirectoryError(f"File header start points to a directory, not a file: {state.current_file}")
+        raise IsADirectoryError(
+            f"File header start points to a directory, "
+            f"not a file: {state.current_file}"
+        )
 
     if dir_mode or current_path == original_path:
         file_lines = read_file_with_fallback_encoding(current_path)
         state.original_lines = [l.rstrip('\n') for l in file_lines]
         state.file_loaded = True
     else:
-        raise FileNotFoundError(f"Filename {state.current_file} in header does not match argument {original}")
+        raise FileNotFoundError(
+            f"Filename {state.current_file} in header "
+            f"does not match argument {original}"
+        )
 
     state.fixed_lines.append(normalize_line(line))
     state.file_start_header = True
@@ -257,7 +274,9 @@ def handle_file_header_end(state, line, match_groups, i, patch_lines, original_p
             raise ValueError("File headers cannot both be /dev/null")
         elif dest_path.exists():
             raise FileExistsError(
-                f"File header start /dev/null implies file creation, but file header end would overwrite existing file: {dest_file}")
+                f"File header start /dev/null implies file creation, "
+                f"but file header end would overwrite existing file: {dest_file}"
+            )
 
         state.current_file = dest_file
         current_path = Path(state.current_file).absolute()
@@ -267,12 +286,16 @@ def handle_file_header_end(state, line, match_groups, i, patch_lines, original_p
             state.fixed_lines.append(normalize_line(line))
             state.file_end_header = True
         else:
-            raise FileNotFoundError(f"Filename {state.current_file} in header does not match argument {original}")
+            raise FileNotFoundError(
+                f"Filename {state.current_file} in header does not match argument {original}"
+            )
     elif dest_file == "/dev/null":
         # file deletion
         current_path = Path(state.current_file).absolute()
         if not current_path.exists():
-            raise FileNotFoundError(f"The file being 'deleted' does not exist: {state.current_file}")
+            raise FileNotFoundError(
+                f"The file being 'deleted' does not exist: {state.current_file}"
+            )
 
         # handle missing deleted file mode line
         if state.last_mode <= state.last_diff:
@@ -291,7 +314,10 @@ def handle_file_header_end(state, line, match_groups, i, patch_lines, original_p
                 state.original_lines = [l.rstrip('\n') for l in file_lines]
                 state.file_loaded = True
             else:
-                raise FileNotFoundError(f"Filename {state.current_file} in header does not match argument {original}")
+                raise FileNotFoundError(
+                    f"Filename {state.current_file} in header "
+                    f"does not match argument {original}"
+                )
     elif state.current_file != dest_file:
         # this is a rename, original_lines is already set from FILE_HEADER_START
         state.fixed_lines.append(normalize_line(line))
@@ -309,7 +335,9 @@ def handle_hunk_header(state, line, match_groups, i, patch_lines, fuzzy, pre_hun
 
     if state.look_for_rename:
         raise ValueError(
-            f"Rename header expected but not found.\nHint: look at lines {state.last_diff}-{i} of the input patch.")
+            f"Rename header expected but not found.\n"
+            f"Hint: look at lines {state.last_diff}-{i} of the input patch."
+        )
 
     # fix missing file headers before capturing the hunk
     if not state.file_end_header:
@@ -417,6 +445,7 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
 
     state = PatchState()
 
+    # call the appropriate helper depending on line type
     for i, line in enumerate(patch_lines):
         match_groups, line_type = match_line(line)
 
@@ -437,20 +466,29 @@ def fix_patch(patch_lines, original, remove_binary=False, fuzzy=False, add_newli
                 handle_binary_line(state, line, remove_binary)
 
             case "RENAME_FROM":
-                handle_rename_from(state, line, match_groups, i, dir_mode, original_path, original)
+                handle_rename_from(state, line, match_groups, i,
+                                   dir_mode, original_path, original)
 
             case "RENAME_TO":
                 handle_rename_to(state, line, match_groups, i)
 
             case "FILE_HEADER_START":
-                handle_file_header_start(state, line, match_groups, i, patch_lines, dir_mode, original_path, original)
+                handle_file_header_start(
+                    state, line, match_groups, i, patch_lines,
+                    dir_mode, original_path, original
+                )
 
             case "FILE_HEADER_END":
-                handle_file_header_end(state, line, match_groups, i, patch_lines, original_path, dir_mode, original)
+                handle_file_header_end(
+                    state, line, match_groups, i, patch_lines,
+                    original_path, dir_mode, original
+                )
 
             case "HUNK_HEADER":
-                handle_hunk_header(state, line, match_groups, i, patch_lines, fuzzy, pre_hunk_hook, post_hunk_hook,
-                                   strict)
+                handle_hunk_header(
+                    state, line, match_groups, i, patch_lines,
+                    fuzzy, pre_hunk_hook, post_hunk_hook, strict
+                )
 
             case "END_LINE":
                 handle_end_line(state, line, add_newline)
